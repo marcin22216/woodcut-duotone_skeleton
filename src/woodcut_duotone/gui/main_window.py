@@ -77,8 +77,7 @@ class MainWindow(QMainWindow):
 
         self.state = AppState()
         self._runner = DebouncedPipelineRunner()
-        self._runner.result_ready.connect(self._on_preview_ready)
-        self._runner.error.connect(self._on_worker_error)
+        self._runner.completed.connect(self._on_worker_done)
 
         self._original_qimage = None
         self._preview_qimage = None
@@ -165,7 +164,7 @@ class MainWindow(QMainWindow):
 
         self._threshold_mode = QComboBox()
         self._threshold_mode.addItems(["otsu", "adaptive"])
-        self._threshold_mode.currentIndexChanged.connect(self._on_setting_changed)
+        self._threshold_mode.currentIndexChanged.connect(self._on_controls_changed)
         layout.addRow("Mode", self._threshold_mode)
 
         self._threshold_bias_slider, self._threshold_bias_label = self._make_slider(
@@ -178,7 +177,7 @@ class MainWindow(QMainWindow):
         layout.addRow("", self._threshold_bias_label)
 
         self._threshold_invert = QCheckBox("Invert")
-        self._threshold_invert.stateChanged.connect(self._on_setting_changed)
+        self._threshold_invert.stateChanged.connect(self._on_controls_changed)
         layout.addRow(self._threshold_invert)
 
         self._threshold_block_slider, self._threshold_block_label = self._make_slider(
@@ -200,7 +199,7 @@ class MainWindow(QMainWindow):
 
         self._morph_op = QComboBox()
         self._morph_op.addItems(["close", "open", "close_then_open"])
-        self._morph_op.currentIndexChanged.connect(self._on_setting_changed)
+        self._morph_op.currentIndexChanged.connect(self._on_controls_changed)
         layout.addRow("Operation", self._morph_op)
 
         self._morph_kernel_slider, self._morph_kernel_label = self._make_slider(
@@ -229,7 +228,7 @@ class MainWindow(QMainWindow):
 
         self._edges_apply_on = QComboBox()
         self._edges_apply_on.addItems(["luma", "binary"])
-        self._edges_apply_on.currentIndexChanged.connect(self._on_setting_changed)
+        self._edges_apply_on.currentIndexChanged.connect(self._on_controls_changed)
         layout.addRow("Apply on", self._edges_apply_on)
 
         self._edges_low_slider, self._edges_low_label = self._make_slider(0, 255, 60)
@@ -345,6 +344,16 @@ class MainWindow(QMainWindow):
         self._suppress_updates = False
 
     def _sync_state_from_controls(self) -> None:
+        self.state.enabled = {}
+        for index in range(self._step_list.count()):
+            item = self._step_list.item(index)
+            step_name = item.data(Qt.ItemDataRole.UserRole)
+            if not step_name:
+                continue
+            self.state.enabled[step_name] = (
+                item.checkState() == Qt.CheckState.Checked
+            )
+
         self.state.params["threshold"] = {
             "mode": self._threshold_mode.currentText(),
             "invert": self._threshold_invert.isChecked(),
@@ -363,7 +372,7 @@ class MainWindow(QMainWindow):
             "apply_on": self._edges_apply_on.currentText(),
         }
 
-    def _on_setting_changed(self) -> None:
+    def _on_controls_changed(self) -> None:
         if self._suppress_updates:
             return
         self.state.push_undo()
@@ -375,7 +384,7 @@ class MainWindow(QMainWindow):
         if self._suppress_updates:
             return
         label.setText(str(value))
-        self._on_setting_changed()
+        self._on_controls_changed()
 
     def _on_odd_slider_changed(
         self, value: int, slider: QSlider, label: QLabel
@@ -389,7 +398,7 @@ class MainWindow(QMainWindow):
             self._suppress_updates = False
             value = adjusted
         label.setText(str(value))
-        self._on_setting_changed()
+        self._on_controls_changed()
 
     def _build_pipeline(self) -> Pipeline:
         params = self.state.params
@@ -459,6 +468,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open failed", str(exc))
             return
         self.state.original_image_rgb = image
+        self.state.preview_image_rgb = None
         self._set_original_image(image)
         self._preview_image_rgb = None
         self._preview_qimage = None
@@ -469,10 +479,11 @@ class MainWindow(QMainWindow):
             image.shape,
             image.dtype,
         )
+        self._render_sync_preview()
         self._schedule_preview()
 
     def _save_image(self) -> None:
-        if self._preview_image_rgb is None:
+        if self.state.preview_image_rgb is None:
             QMessageBox.information(self, "Save", "No preview available to save.")
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -481,7 +492,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            save_image(path, self._preview_image_rgb)
+            save_image(path, self.state.preview_image_rgb)
         except Exception as exc:  # pragma: no cover - GUI error handling
             QMessageBox.critical(self, "Save failed", str(exc))
 
@@ -506,11 +517,14 @@ class MainWindow(QMainWindow):
     def _update_action_states(self) -> None:
         self._undo_action.setEnabled(self.state.can_undo)
         self._redo_action.setEnabled(self.state.can_redo)
-        self._save_action.setEnabled(self._preview_image_rgb is not None)
+        self._save_action.setEnabled(self.state.preview_image_rgb is not None)
 
-    def _on_preview_ready(self, revision: int, image) -> None:
+    def _on_worker_done(self, revision: int, image, error: str | None) -> None:
         if not should_apply_revision(self._expected_revision, revision):
             self._log_ignored_revision(revision)
+            return
+        if error:
+            QMessageBox.critical(self, "Processing failed", error)
             return
         if not isinstance(image, np.ndarray):
             logging.getLogger(__name__).debug(
@@ -519,26 +533,7 @@ class MainWindow(QMainWindow):
                 type(image),
             )
             return
-        self._preview_image_rgb = image
-        self._preview_qimage = rgb_to_qimage(image)
-        self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
-        self._update_action_states()
-        self.state.last_applied_revision = revision
-        logging.getLogger(__name__).debug(
-            "APPLY preview: rev=%s shape=%s dtype=%s min=%s max=%s",
-            revision,
-            image.shape,
-            image.dtype,
-            int(np.min(image)),
-            int(np.max(image)),
-        )
-        self._write_debug_preview(image)
-
-    def _on_worker_error(self, revision: int, message: str) -> None:
-        if not should_apply_revision(self._expected_revision, revision):
-            self._log_ignored_revision(revision)
-            return
-        QMessageBox.critical(self, "Processing failed", message)
+        self._apply_preview(image, revision)
 
     def _set_original_image(self, image) -> None:
         self._original_qimage = rgb_to_qimage(image)
@@ -627,13 +622,7 @@ class MainWindow(QMainWindow):
     def _on_step_checkbox_changed(self, item: QListWidgetItem) -> None:
         if self._suppress_updates:
             return
-        step_name = item.data(Qt.ItemDataRole.UserRole)
-        if not step_name:
-            return
-        self.state.push_undo()
-        self.state.enabled[step_name] = item.checkState() == Qt.CheckState.Checked
-        self._update_action_states()
-        self._schedule_preview()
+        self._on_controls_changed()
 
     def _on_steps_reordered(self, new_order: list[str]) -> None:
         if self._suppress_updates:
@@ -653,6 +642,41 @@ class MainWindow(QMainWindow):
         self.state.move_step(moved_step, moved_index)
         self._update_action_states()
         self._schedule_preview()
+
+    def _apply_preview(self, image: np.ndarray, revision: int) -> None:
+        self._preview_image_rgb = image
+        self.state.preview_image_rgb = image
+        self._preview_qimage = rgb_to_qimage(image)
+        self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+        self._update_action_states()
+        self.state.last_applied_revision = revision
+        logging.getLogger(__name__).debug(
+            "APPLY preview: rev=%s shape=%s dtype=%s min=%s max=%s",
+            revision,
+            image.shape,
+            image.dtype,
+            int(np.min(image)),
+            int(np.max(image)),
+        )
+        self._write_debug_preview(image)
+
+    def _render_sync_preview(self) -> None:
+        try:
+            pipeline = self._build_pipeline()
+            result = pipeline.run(self.state.original_image_rgb.copy())
+        except Exception as exc:  # pragma: no cover - GUI error handling
+            QMessageBox.critical(self, "Processing failed", str(exc))
+            return
+        revision = self.state.next_render_revision()
+        self._expected_revision = revision
+        if isinstance(result, np.ndarray):
+            self._apply_preview(result, revision)
+        else:
+            logging.getLogger(__name__).debug(
+                "APPLY preview: rev=%s invalid image type=%s",
+                revision,
+                type(result),
+            )
 
 
 def run_gui() -> int:

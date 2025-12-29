@@ -58,6 +58,7 @@ def _default_step_order() -> list[str]:
 class AppState:
     def __init__(self) -> None:
         self.original_image_rgb: np.ndarray | None = None
+        self.preview_image_rgb: np.ndarray | None = None
         self.enabled = _default_enabled()
         self.params = _default_params()
         self.step_order = _default_step_order()

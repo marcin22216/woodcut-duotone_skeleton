@@ -248,3 +248,19 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Re-evaluate preview stability, then remove debug output/logs.
+
+## 2025-12-29 — Hotfix GUI #3 preview pipeline path
+### Done
+- Added a one-time synchronous render after Open to confirm pipeline output and unblock preview.
+- Ensured worker lifetime and unified completion signals to avoid dropped results.
+- Added per-render debug output `_debug_preview.png` plus detailed start/finish/apply logs.
+- Wired preview state storage in AppState to control Save As availability.
+
+### Issues / risks
+- Synchronous render runs on the UI thread once after Open and may block briefly on large images.
+
+### Decisions
+- Worker results are applied only for the exact expected revision; older/newer revisions are ignored.
+
+### Next
+- Remove the synchronous render once worker stability is confirmed.

@@ -14,8 +14,7 @@ from woodcut_duotone.core.pipeline import Pipeline
 
 
 class PipelineWorker(QObject):
-    finished = Signal(int, object)
-    failed = Signal(int, str)
+    completed = Signal(int, object, object)
 
     def __init__(self, image, pipeline: Pipeline, revision: int) -> None:
         super().__init__()
@@ -42,7 +41,7 @@ class PipelineWorker(QObject):
                 None,
                 exc,
             )
-            self.failed.emit(self._revision, str(exc))
+            self.completed.emit(self._revision, None, str(exc))
         else:
             out_min = int(np.min(result)) if isinstance(result, np.ndarray) else None
             out_max = int(np.max(result)) if isinstance(result, np.ndarray) else None
@@ -55,12 +54,11 @@ class PipelineWorker(QObject):
                 out_max,
                 None,
             )
-            self.finished.emit(self._revision, result)
+            self.completed.emit(self._revision, result, None)
 
 
 class DebouncedPipelineRunner(QObject):
-    result_ready = Signal(int, object)
-    error = Signal(int, str)
+    completed = Signal(int, object, object)
 
     def __init__(self, delay_ms: int = 200, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -71,6 +69,7 @@ class DebouncedPipelineRunner(QObject):
         self._running = False
         self._queued = False
         self._thread: Optional[QThread] = None
+        self._worker: Optional[PipelineWorker] = None
 
     def schedule(self, image, pipeline: Pipeline, revision: int) -> None:
         self._pending = (image.copy(), pipeline, revision)
@@ -91,27 +90,18 @@ class DebouncedPipelineRunner(QObject):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
-        worker.finished.connect(self._on_finished)
-        worker.failed.connect(self._on_failed)
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        worker.failed.connect(worker.deleteLater)
+        worker.completed.connect(self._on_completed)
+        worker.completed.connect(thread.quit)
+        worker.completed.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
 
         self._thread = thread
+        self._worker = worker
         thread.start()
 
-    def _on_finished(self, result) -> None:
+    def _on_completed(self, revision: int, result, error: str | None) -> None:
         self._running = False
-        self.result_ready.emit(result)
-        if self._queued:
-            self._queued = False
-            self._timer.start()
-
-    def _on_failed(self, message: str) -> None:
-        self._running = False
-        self.error.emit(message)
+        self.completed.emit(revision, result, error)
         if self._queued:
             self._queued = False
             self._timer.start()
