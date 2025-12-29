@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -13,9 +14,10 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QScrollArea,
     QSlider,
     QToolBar,
@@ -37,6 +39,32 @@ from woodcut_duotone.gui.worker import DebouncedPipelineRunner
 from woodcut_duotone.io import load_image, rgb_to_qimage, save_image
 
 
+class StepListWidget(QListWidget):
+    orderChanged = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        super().dropEvent(event)
+        self.orderChanged.emit(self.current_order())
+
+    def current_order(self) -> list[str]:
+        order: list[str] = []
+        for index in range(self.count()):
+            item = self.item(index)
+            step_name = item.data(Qt.ItemDataRole.UserRole)
+            if step_name:
+                order.append(step_name)
+        return order
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -53,7 +81,7 @@ class MainWindow(QMainWindow):
         self._expected_revision = 0
         self._suppress_updates = False
 
-        self._enabled_checkboxes: dict[str, QCheckBox] = {}
+        self._step_items: dict[str, QListWidgetItem] = {}
 
         self._build_ui()
         self._apply_state_to_controls()
@@ -104,18 +132,13 @@ class MainWindow(QMainWindow):
 
         steps_group = QGroupBox("Steps")
         steps_layout = QVBoxLayout(steps_group)
-        for key, label in [
-            ("grayscale", "Grayscale"),
-            ("clahe", "CLAHE Contrast"),
-            ("blur", "Gaussian Blur"),
-            ("threshold", "Threshold"),
-            ("morphology", "Morphology"),
-            ("edges", "Edges"),
-        ]:
-            checkbox = QCheckBox(label)
-            checkbox.stateChanged.connect(self._on_setting_changed)
-            steps_layout.addWidget(checkbox)
-            self._enabled_checkboxes[key] = checkbox
+        self._step_list = StepListWidget()
+        self._step_list.orderChanged.connect(self._on_steps_reordered)
+        self._step_list.itemChanged.connect(self._on_step_checkbox_changed)
+        steps_layout.addWidget(self._step_list)
+        steps_hint = QLabel("Drag steps to reorder the pipeline.")
+        steps_hint.setWordWrap(True)
+        steps_layout.addWidget(steps_hint)
         left_layout.addWidget(steps_group)
 
         left_layout.addWidget(self._build_threshold_group())
@@ -280,8 +303,7 @@ class MainWindow(QMainWindow):
     def _apply_state_to_controls(self) -> None:
         self._suppress_updates = True
 
-        for key, checkbox in self._enabled_checkboxes.items():
-            checkbox.setChecked(self.state.enabled.get(key, False))
+        self._populate_step_list()
 
         threshold_params = self.state.params["threshold"]
         self._threshold_mode.setCurrentText(threshold_params["mode"])
@@ -310,9 +332,6 @@ class MainWindow(QMainWindow):
         self._suppress_updates = False
 
     def _sync_state_from_controls(self) -> None:
-        for key, checkbox in self._enabled_checkboxes.items():
-            self.state.enabled[key] = checkbox.isChecked()
-
         self.state.params["threshold"] = {
             "mode": self._threshold_mode.currentText(),
             "invert": self._threshold_invert.isChecked(),
@@ -362,39 +381,44 @@ class MainWindow(QMainWindow):
     def _build_pipeline(self) -> Pipeline:
         params = self.state.params
         enabled = self.state.enabled
-        steps = [
-            GrayscaleStep(enabled=enabled["grayscale"]),
-            CLAHEContrastStep(
+        steps_by_name = {
+            "grayscale": GrayscaleStep(enabled=enabled["grayscale"]),
+            "clahe": CLAHEContrastStep(
                 enabled=enabled["clahe"],
                 clip_limit=params["clahe"]["clip_limit"],
                 tile_grid_size=params["clahe"]["tile_grid_size"],
             ),
-            GaussianBlurStep(
+            "blur": GaussianBlurStep(
                 enabled=enabled["blur"],
                 strength=params["blur"]["strength"],
             ),
-            ThresholdStep(
+            "threshold": ThresholdStep(
                 enabled=enabled["threshold"],
                 mode=params["threshold"]["mode"],
                 invert=params["threshold"]["invert"],
                 bias=params["threshold"]["bias"],
                 block_size=params["threshold"]["block_size"],
             ),
-            MorphologyStep(
+            "morphology": MorphologyStep(
                 enabled=enabled["morphology"],
                 operation=params["morphology"]["operation"],
                 kernel_size=params["morphology"]["kernel_size"],
                 iterations=params["morphology"]["iterations"],
             ),
-            EdgesStep(
+            "edges": EdgesStep(
                 enabled=enabled["edges"],
                 low=params["edges"]["low"],
                 high=params["edges"]["high"],
                 thickness=params["edges"]["thickness"],
                 apply_on=params["edges"]["apply_on"],
             ),
+        }
+        ordered_steps = [
+            steps_by_name[name]
+            for name in self.state.step_order
+            if name in steps_by_name
         ]
-        return Pipeline(steps)
+        return Pipeline(ordered_steps)
 
     def _schedule_preview(self) -> None:
         if self.state.original_image_rgb is None:
@@ -495,6 +519,67 @@ class MainWindow(QMainWindow):
             self._update_label_pixmap(self._original_image_label, self._original_qimage)
         if self._preview_qimage is not None:
             self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+
+    def _populate_step_list(self) -> None:
+        self._step_list.blockSignals(True)
+        self._step_list.clear()
+        self._step_items.clear()
+        for step_name in self.state.step_order:
+            label = {
+                "grayscale": "Grayscale",
+                "clahe": "CLAHE Contrast",
+                "blur": "Gaussian Blur",
+                "threshold": "Threshold",
+                "morphology": "Morphology",
+                "edges": "Edges",
+            }.get(step_name, step_name)
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, step_name)
+            item.setFlags(
+                item.flags()
+                | Qt.ItemFlag.ItemIsUserCheckable
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsDragEnabled
+            )
+            item.setCheckState(
+                Qt.CheckState.Checked
+                if self.state.enabled.get(step_name, False)
+                else Qt.CheckState.Unchecked
+            )
+            self._step_list.addItem(item)
+            self._step_items[step_name] = item
+        self._step_list.blockSignals(False)
+
+    def _on_step_checkbox_changed(self, item: QListWidgetItem) -> None:
+        if self._suppress_updates:
+            return
+        step_name = item.data(Qt.ItemDataRole.UserRole)
+        if not step_name:
+            return
+        self.state.push_undo()
+        self.state.enabled[step_name] = item.checkState() == Qt.CheckState.Checked
+        self._update_action_states()
+        self._schedule_preview()
+
+    def _on_steps_reordered(self, new_order: list[str]) -> None:
+        if self._suppress_updates:
+            return
+        if new_order == self.state.step_order:
+            return
+        old_order = self.state.step_order
+        moved_step = None
+        moved_index = None
+        for index, (old, new) in enumerate(zip(old_order, new_order)):
+            if old != new:
+                moved_step = new
+                moved_index = index
+                break
+        if moved_step is None or moved_index is None:
+            return
+        self.state.move_step(moved_step, moved_index)
+        self._update_action_states()
+        self._schedule_preview()
 
 
 def run_gui() -> int:

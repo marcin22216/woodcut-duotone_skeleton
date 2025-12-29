@@ -57,6 +57,7 @@ Launch the GUI with live previews and step controls:
 ```bash
 python -m woodcut_duotone.app --gui
 ```
+Steps can be reordered via drag-and-drop in the left panel.
 
 ## Repository layout
 - `src/woodcut_duotone/core/` – pipeline + processing steps

@@ -44,25 +44,39 @@ def _default_params() -> dict[str, dict[str, Any]]:
     }
 
 
+def _default_step_order() -> list[str]:
+    return [
+        "grayscale",
+        "clahe",
+        "blur",
+        "threshold",
+        "morphology",
+        "edges",
+    ]
+
+
 class AppState:
     def __init__(self) -> None:
         self.original_image_rgb: np.ndarray | None = None
         self.enabled = _default_enabled()
         self.params = _default_params()
-        self.undo_stack: list[dict[str, dict[str, Any]]] = []
-        self.redo_stack: list[dict[str, dict[str, Any]]] = []
+        self.step_order = _default_step_order()
+        self.undo_stack: list[dict[str, object]] = []
+        self.redo_stack: list[dict[str, object]] = []
         self.render_revision = 0
         self.last_applied_revision = 0
 
-    def snapshot(self) -> dict[str, dict[str, Any]]:
+    def snapshot(self) -> dict[str, object]:
         return {
             "enabled": deepcopy(self.enabled),
             "params": deepcopy(self.params),
+            "step_order": list(self.step_order),
         }
 
-    def restore(self, snapshot: dict[str, dict[str, Any]]) -> None:
+    def restore(self, snapshot: dict[str, object]) -> None:
         self.enabled = deepcopy(snapshot["enabled"])
         self.params = deepcopy(snapshot["params"])
+        self.step_order = list(snapshot["step_order"])
 
     def push_undo(self) -> None:
         self.undo_stack.append(self.snapshot())
@@ -71,12 +85,25 @@ class AppState:
     def reset_defaults(self) -> None:
         self.enabled = _default_enabled()
         self.params = _default_params()
+        self.step_order = _default_step_order()
         self.undo_stack.clear()
         self.redo_stack.clear()
 
     def next_render_revision(self) -> int:
         self.render_revision += 1
         return self.render_revision
+
+    def move_step(self, step_name: str, new_index: int) -> None:
+        if step_name not in self.step_order:
+            raise ValueError(f"Unknown step: {step_name}")
+        if not (0 <= new_index < len(self.step_order)):
+            raise ValueError("new_index out of range")
+        current_index = self.step_order.index(step_name)
+        if current_index == new_index:
+            return
+        self.push_undo()
+        self.step_order.pop(current_index)
+        self.step_order.insert(new_index, step_name)
 
     @property
     def can_undo(self) -> bool:

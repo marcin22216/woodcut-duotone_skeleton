@@ -42,6 +42,7 @@ def test_app_state_restore_snapshot() -> None:
 
     assert state.enabled == snapshot["enabled"]
     assert state.params == snapshot["params"]
+    assert state.step_order == snapshot["step_order"]
 
 
 def test_app_state_render_revision_increments() -> None:
@@ -64,6 +65,14 @@ def test_app_state_reset_clears_history_and_defaults() -> None:
 
     assert state.params["threshold"]["bias"] == 0
     assert state.enabled["edges"] is False
+    assert state.step_order == [
+        "grayscale",
+        "clahe",
+        "blur",
+        "threshold",
+        "morphology",
+        "edges",
+    ]
     assert not state.can_undo
     assert not state.can_redo
 
@@ -72,3 +81,16 @@ def test_should_apply_revision() -> None:
     assert should_apply_revision(3, 3)
     assert not should_apply_revision(3, 2)
     assert not should_apply_revision(3, 4)
+
+
+def test_app_state_move_step_and_undo_redo() -> None:
+    state = AppState()
+
+    state.move_step("edges", 0)
+    assert state.step_order[0] == "edges"
+
+    assert state.undo()
+    assert state.step_order[-1] == "edges"
+
+    assert state.redo()
+    assert state.step_order[0] == "edges"

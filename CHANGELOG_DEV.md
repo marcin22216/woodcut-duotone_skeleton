@@ -199,3 +199,20 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Stage 12: step reordering (drag & drop), improved Undo/Redo semantics, and presets.
+
+## 2025-12-29 — Stage 12 Step reordering
+### Done
+- Added step order tracking in `AppState` with undo/redo support via `move_step`.
+- Implemented drag-and-drop step reordering in the GUI list and wired it to pipeline order.
+- Added state tests for step order snapshots, reset defaults, and undo/redo behavior.
+- Documented drag-and-drop reordering in `README.md`.
+
+### Issues / risks
+- Drag-and-drop assumes a single moved step per interaction; unexpected reorder events may require a future `set_step_order` helper.
+
+### Decisions
+- Step order is stored as a list of step keys in `AppState` and included in snapshots.
+- GUI list order is the source of truth for pipeline construction.
+
+### Next
+- Stage 13: presets/export/import of settings and refinement of parameter UI.
