@@ -87,6 +87,8 @@ def test_app_state_params_have_required_keys() -> None:
     assert "high" in state.params["Edges"]
     assert "thickness" in state.params["Edges"]
     assert "apply_on" in state.params["Edges"]
+    assert isinstance(state.params["Edges"]["low"], int)
+    assert isinstance(state.params["Edges"]["high"], int)
 
 
 def test_should_apply_revision() -> None:

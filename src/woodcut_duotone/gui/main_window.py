@@ -421,6 +421,8 @@ class MainWindow(QMainWindow):
             enabled.get("Edges", False),
             params["Edges"],
         )
+        if enabled.get("Edges", False):
+            assert "low" in params["Edges"] and "high" in params["Edges"]
         steps_by_name = {
             "Grayscale": GrayscaleStep(enabled=enabled["Grayscale"]),
             "CLAHE Contrast": CLAHEContrastStep(
@@ -468,6 +470,13 @@ class MainWindow(QMainWindow):
             self._sync_render_flags()
             return
         self._sync_render_flags()
+        logging.getLogger(__name__).debug(
+            "EDGES UI->STATE low=%s high=%s thickness=%s apply_on=%s",
+            self.state.params["Edges"]["low"],
+            self.state.params["Edges"]["high"],
+            self.state.params["Edges"]["thickness"],
+            self.state.params["Edges"]["apply_on"],
+        )
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
         logging.getLogger(__name__).debug(

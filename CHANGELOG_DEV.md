@@ -318,3 +318,12 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Decisions
 - Tests use the fixture image and compare black pixel counts to verify parameter influence.
+
+## 2025-12-29 — Hotfix GUI edges low/high binding
+### Done
+- Added explicit runtime logging of Edges params before scheduling renders.
+- Added fail-fast assertions to ensure Edges params exist when enabled.
+- Added state tests that verify low/high are ints in default params.
+
+### Issues / risks
+- Runtime assertions are for development diagnostics; remove or guard if they become noisy.
