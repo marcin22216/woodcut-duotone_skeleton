@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
+import numpy as np
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QPixmap
@@ -81,6 +84,7 @@ class MainWindow(QMainWindow):
         self._preview_qimage = None
         self._preview_image_rgb = None
         self._expected_revision = 0
+        self._last_ignored_revision: int | None = None
         self._suppress_updates = False
 
         self._step_items: dict[str, QListWidgetItem] = {}
@@ -435,7 +439,7 @@ class MainWindow(QMainWindow):
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
         logging.getLogger(__name__).debug(
-            "schedule render rev=%s image=%s",
+            "SCHEDULE render: expected_rev=%s has_image=%s",
             self._expected_revision,
             self.state.original_image_rgb is not None,
         )
@@ -460,6 +464,11 @@ class MainWindow(QMainWindow):
         self._preview_qimage = None
         self._update_label_pixmap(self._preview_image_label, None)
         self._update_action_states()
+        logging.getLogger(__name__).debug(
+            "OPEN loaded: shape=%s dtype=%s",
+            image.shape,
+            image.dtype,
+        )
         self._schedule_preview()
 
     def _save_image(self) -> None:
@@ -501,15 +510,33 @@ class MainWindow(QMainWindow):
 
     def _on_preview_ready(self, revision: int, image) -> None:
         if not should_apply_revision(self._expected_revision, revision):
+            self._log_ignored_revision(revision)
+            return
+        if not isinstance(image, np.ndarray):
+            logging.getLogger(__name__).debug(
+                "APPLY preview: rev=%s invalid image type=%s",
+                revision,
+                type(image),
+            )
             return
         self._preview_image_rgb = image
         self._preview_qimage = rgb_to_qimage(image)
         self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
         self._update_action_states()
         self.state.last_applied_revision = revision
+        logging.getLogger(__name__).debug(
+            "APPLY preview: rev=%s shape=%s dtype=%s min=%s max=%s",
+            revision,
+            image.shape,
+            image.dtype,
+            int(np.min(image)),
+            int(np.max(image)),
+        )
+        self._write_debug_preview(image)
 
     def _on_worker_error(self, revision: int, message: str) -> None:
         if not should_apply_revision(self._expected_revision, revision):
+            self._log_ignored_revision(revision)
             return
         QMessageBox.critical(self, "Processing failed", message)
 
@@ -535,6 +562,36 @@ class MainWindow(QMainWindow):
             self._update_label_pixmap(self._original_image_label, self._original_qimage)
         if self._preview_qimage is not None:
             self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+
+    def _log_ignored_revision(self, revision: int) -> None:
+        if revision == self._last_ignored_revision:
+            return
+        self._last_ignored_revision = revision
+        logging.getLogger(__name__).debug(
+            "IGNORE preview: incoming_rev=%s expected_rev=%s",
+            revision,
+            self._expected_revision,
+        )
+
+    def _write_debug_preview(self, image: np.ndarray) -> None:
+        primary_path = Path(__file__).resolve().parents[3] / "_debug_preview.png"
+        fallback_path = Path("/tmp/_debug_preview.png")
+        try:
+            save_image(str(primary_path), image)
+        except Exception as exc:  # pragma: no cover - diagnostic fallback
+            logging.getLogger(__name__).debug(
+                "debug preview save failed path=%s err=%s",
+                primary_path,
+                exc,
+            )
+            try:
+                save_image(str(fallback_path), image)
+            except Exception as fallback_exc:  # pragma: no cover - best effort
+                logging.getLogger(__name__).debug(
+                    "debug preview fallback save failed path=%s err=%s",
+                    fallback_path,
+                    fallback_exc,
+                )
 
     def _populate_step_list(self) -> None:
         self._step_list.blockSignals(True)

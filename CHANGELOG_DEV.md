@@ -233,3 +233,18 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Resume planned GUI refinements after confirming preview stability.
+
+## 2025-12-29 — Hotfix GUI #2 preview diagnostics
+### Done
+- Added detailed render diagnostics (open/schedule/apply + worker start/finish).
+- Ensured preview updates are applied only for the expected revision.
+- Added `_debug_preview.png` output after each render for visual verification (fallback to `/tmp`).
+
+### Issues / risks
+- Debug preview files are written on every render; remove once diagnostics are complete.
+
+### Decisions
+- Applied a strict revision match to ignore stale results and avoid black previews.
+
+### Next
+- Re-evaluate preview stability, then remove debug output/logs.

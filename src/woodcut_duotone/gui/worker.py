@@ -6,6 +6,8 @@ from typing import Optional
 
 import logging
 
+import numpy as np
+
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from woodcut_duotone.core.pipeline import Pipeline
@@ -22,19 +24,36 @@ class PipelineWorker(QObject):
         self._revision = revision
 
     def run(self) -> None:
+        logging.getLogger(__name__).debug(
+            "WORKER start: rev=%s shape=%s dtype=%s",
+            self._revision,
+            getattr(self._image, "shape", None),
+            getattr(self._image, "dtype", None),
+        )
         try:
             result = self._pipeline.run(self._image)
         except Exception as exc:  # pragma: no cover - GUI error handling
             logging.getLogger(__name__).debug(
-                "worker finish rev=%s error=%s", self._revision, exc
+                "WORKER finish: rev=%s out_shape=%s out_dtype=%s out_min=%s out_max=%s err=%s",
+                self._revision,
+                None,
+                None,
+                None,
+                None,
+                exc,
             )
             self.failed.emit(self._revision, str(exc))
         else:
+            out_min = int(np.min(result)) if isinstance(result, np.ndarray) else None
+            out_max = int(np.max(result)) if isinstance(result, np.ndarray) else None
             logging.getLogger(__name__).debug(
-                "worker finish rev=%s ok shape=%s dtype=%s",
+                "WORKER finish: rev=%s out_shape=%s out_dtype=%s out_min=%s out_max=%s err=%s",
                 self._revision,
                 getattr(result, "shape", None),
                 getattr(result, "dtype", None),
+                out_min,
+                out_max,
+                None,
             )
             self.finished.emit(self._revision, result)
 
