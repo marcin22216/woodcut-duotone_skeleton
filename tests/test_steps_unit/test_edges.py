@@ -80,3 +80,31 @@ def test_edges_apply_on_changes_output() -> None:
     binary_out = binary.apply(image, params=None)
 
     assert not np.array_equal(luma_out, binary_out)
+
+
+def test_edges_low_high_effect_stronger_on_luma_source() -> None:
+    gradient = np.tile(np.linspace(0, 255, 16, dtype=np.uint8), (16, 1))
+    binary = np.where(gradient > 127, 255, 0).astype(np.uint8)
+    image = np.stack((binary, binary, binary), axis=-1)
+
+    low_luma = EdgesStep(low=10, high=30, thickness=1, apply_on="luma")
+    high_luma = EdgesStep(low=180, high=250, thickness=1, apply_on="luma")
+
+    low_luma_out = low_luma.apply(image, params={"source_luma": gradient})
+    high_luma_out = high_luma.apply(image, params={"source_luma": gradient})
+
+    low_luma_black = np.sum(np.all(low_luma_out == 0, axis=-1))
+    high_luma_black = np.sum(np.all(high_luma_out == 0, axis=-1))
+    diff_luma = abs(int(low_luma_black) - int(high_luma_black))
+
+    low_bin = EdgesStep(low=10, high=30, thickness=1, apply_on="binary")
+    high_bin = EdgesStep(low=180, high=250, thickness=1, apply_on="binary")
+
+    low_bin_out = low_bin.apply(image, params=None)
+    high_bin_out = high_bin.apply(image, params=None)
+
+    low_bin_black = np.sum(np.all(low_bin_out == 0, axis=-1))
+    high_bin_black = np.sum(np.all(high_bin_out == 0, axis=-1))
+    diff_bin = abs(int(low_bin_black) - int(high_bin_black))
+
+    assert diff_luma > diff_bin

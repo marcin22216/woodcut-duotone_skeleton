@@ -336,3 +336,16 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Issues / risks
 - INFO logs are noisy during rapid slider drags; downgrade to DEBUG once diagnosis is complete.
+
+## 2025-12-29 — Bugfix Edges low/high on real images
+### Done
+- Added `source_luma` context from pipeline input and used it for Edges Canny when apply_on is luma.
+- Added INFO diagnostics in EdgesStep to report input stats (dtype/min/max/unique count).
+- Added regression tests covering low/high sensitivity with grayscale vs binary-like inputs.
+- Regenerated `tests/fixtures/golden/test_8x8_edges.png` for the new edge input source.
+
+### Issues / risks
+- Edges golden output changed because Canny now uses pre-threshold luma; keep this in mind for future updates.
+
+### Decisions
+- Source luma is captured from the original RGB input (Option 2) to minimize pipeline changes.

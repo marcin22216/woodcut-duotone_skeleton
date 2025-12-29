@@ -61,6 +61,34 @@ def _prepare_binary(channel: np.ndarray) -> np.ndarray:
     return np.where(channel > 127, 255, 0).astype(np.uint8)
 
 
+def _normalize_luma(source_luma: np.ndarray | None, image_rgb: np.ndarray) -> np.ndarray:
+    if isinstance(source_luma, np.ndarray):
+        luma = source_luma
+        if luma.ndim == 3 and luma.shape[2] == 3:
+            luma = _rgb_to_gray(luma)
+        if luma.ndim != 2:
+            return _rgb_to_gray(image_rgb)
+        if np.issubdtype(luma.dtype, np.floating):
+            max_val = float(np.max(luma)) if luma.size else 0.0
+            if max_val <= 1.0:
+                luma = luma * 255.0
+            luma = np.clip(luma, 0, 255).astype(np.uint8)
+        else:
+            luma = np.clip(luma, 0, 255).astype(np.uint8)
+        return luma
+    return _rgb_to_gray(image_rgb)
+
+
+def _estimate_unique_count(array: np.ndarray, max_samples: int = 10000) -> int:
+    if array.size == 0:
+        return 0
+    flat = array.ravel()
+    if flat.size > max_samples:
+        step = max(flat.size // max_samples, 1)
+        flat = flat[::step]
+    return int(np.unique(flat).size)
+
+
 class EdgesStep(BaseStep):
     def __init__(
         self,
@@ -106,10 +134,18 @@ class EdgesStep(BaseStep):
         )
 
         if apply_on == APPLY_LUMA:
-            gray = _rgb_to_gray(image_rgb)
+            gray = _normalize_luma(merged_params.get("source_luma"), image_rgb)
         else:
             channel = image_rgb[..., 0]
             gray = _prepare_binary(channel)
+
+        logging.getLogger(__name__).info(
+            "Edges input: dtype=%s min=%s max=%s unique=%s",
+            gray.dtype,
+            int(np.min(gray)),
+            int(np.max(gray)),
+            _estimate_unique_count(gray),
+        )
 
         edges = cv2.Canny(gray, low, high)
 
