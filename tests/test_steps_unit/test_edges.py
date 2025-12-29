@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from woodcut_duotone.core.steps.edges import EdgesStep
+from woodcut_duotone.io.load_save import load_image
 
 
 def _make_test_image() -> np.ndarray:
@@ -52,3 +53,30 @@ def test_edges_thickness_increases_ink() -> None:
     thick_black = np.sum(np.all(thick_out == 0, axis=-1))
 
     assert thick_black > thin_black
+
+
+def test_edges_low_high_influence_output() -> None:
+    image = load_image("tests/fixtures/images/test_8x8.png")
+
+    low_edges = EdgesStep(low=10, high=30, thickness=1, apply_on="luma")
+    high_edges = EdgesStep(low=180, high=250, thickness=1, apply_on="luma")
+
+    low_out = low_edges.apply(image, params=None)
+    high_out = high_edges.apply(image, params=None)
+
+    low_black = np.sum(np.all(low_out == 0, axis=-1))
+    high_black = np.sum(np.all(high_out == 0, axis=-1))
+
+    assert low_black > high_black
+
+
+def test_edges_apply_on_changes_output() -> None:
+    image = load_image("tests/fixtures/images/test_8x8.png")
+
+    luma = EdgesStep(low=60, high=140, thickness=1, apply_on="luma")
+    binary = EdgesStep(low=60, high=140, thickness=1, apply_on="binary")
+
+    luma_out = luma.apply(image, params=None)
+    binary_out = binary.apply(image, params=None)
+
+    assert not np.array_equal(luma_out, binary_out)

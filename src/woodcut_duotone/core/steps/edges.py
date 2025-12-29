@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import cv2
 import numpy as np
 
@@ -95,6 +97,13 @@ class EdgesStep(BaseStep):
             raise ValueError("Invalid edges parameters") from exc
 
         _validate_params(low, high, thickness, apply_on)
+        logging.getLogger(__name__).debug(
+            "Edges params: low=%s high=%s thickness=%s apply_on=%s",
+            low,
+            high,
+            thickness,
+            apply_on,
+        )
 
         if apply_on == APPLY_LUMA:
             gray = _rgb_to_gray(image_rgb)

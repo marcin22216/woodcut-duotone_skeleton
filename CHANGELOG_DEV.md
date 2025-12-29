@@ -307,3 +307,14 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Decisions
 - Step names are the single source of truth (`KNOWN_STEPS`) used by state, GUI list, and pipeline build.
+
+## 2025-12-29 — Hotfix Edges parameters binding
+### Done
+- Ensured EdgesStep merges runtime params with defaults and logs final low/high/thickness/apply_on.
+- Added unit tests that assert low/high thresholds and apply_on mode change the output.
+
+### Issues / risks
+- Edge sensitivity can vary across OpenCV builds; tests rely on clear threshold extremes to stay stable.
+
+### Decisions
+- Tests use the fixture image and compare black pixel counts to verify parameter influence.
