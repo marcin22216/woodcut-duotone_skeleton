@@ -77,6 +77,18 @@ def test_app_state_reset_clears_history_and_defaults() -> None:
     assert not state.can_redo
 
 
+def test_app_state_params_have_required_keys() -> None:
+    state = AppState()
+
+    assert "mode" in state.params["threshold"]
+    assert "block_size" in state.params["threshold"]
+
+    assert "low" in state.params["edges"]
+    assert "high" in state.params["edges"]
+    assert "thickness" in state.params["edges"]
+    assert "apply_on" in state.params["edges"]
+
+
 def test_should_apply_revision() -> None:
     assert should_apply_revision(3, 3)
     assert not should_apply_revision(3, 2)

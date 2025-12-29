@@ -279,3 +279,19 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Remove debug output once preview stability is confirmed.
+
+## 2025-12-29 — Hotfix GUI controls binding
+### Done
+- Verified threshold/adaptive block size and edges controls are bound to AppState and trigger renders.
+- Added debug logging in pipeline build to report threshold/edges parameters.
+- Disabled block size control when threshold mode is Otsu to avoid confusion.
+- Added state tests ensuring required params keys exist.
+
+### Issues / risks
+- Debug logging may be noisy while diagnosing; remove once bindings are confirmed.
+
+### Decisions
+- AppState params use lowercase step keys as the source of truth.
+
+### Next
+- Remove diagnostic logs and revisit GUI parameter UX.

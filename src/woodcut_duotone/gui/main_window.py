@@ -327,6 +327,7 @@ class MainWindow(QMainWindow):
         self._threshold_invert.setChecked(threshold_params["invert"])
         self._threshold_block_slider.setValue(threshold_params["block_size"])
         self._threshold_block_label.setText(str(threshold_params["block_size"]))
+        self._update_threshold_controls()
 
         morph_params = self.state.params["morphology"]
         self._morph_op.setCurrentText(morph_params["operation"])
@@ -380,6 +381,7 @@ class MainWindow(QMainWindow):
             return
         self.state.push_undo()
         self._sync_state_from_controls()
+        self._update_threshold_controls()
         self._update_action_states()
         self._schedule_preview()
 
@@ -406,6 +408,16 @@ class MainWindow(QMainWindow):
     def _build_pipeline(self) -> Pipeline:
         params = self.state.params
         enabled = self.state.enabled
+        logging.getLogger(__name__).debug(
+            "PIPELINE params: threshold=%s block_size=%s edges_enabled=%s low=%s high=%s thickness=%s apply_on=%s",
+            params["threshold"]["mode"],
+            params["threshold"]["block_size"],
+            enabled.get("edges", False),
+            params["edges"]["low"],
+            params["edges"]["high"],
+            params["edges"]["thickness"],
+            params["edges"]["apply_on"],
+        )
         steps_by_name = {
             "grayscale": GrayscaleStep(enabled=enabled["grayscale"]),
             "clahe": CLAHEContrastStep(
@@ -654,6 +666,11 @@ class MainWindow(QMainWindow):
         self.state.move_step(moved_step, moved_index)
         self._update_action_states()
         self._schedule_preview()
+
+    def _update_threshold_controls(self) -> None:
+        is_adaptive = self._threshold_mode.currentText() == "adaptive"
+        self._threshold_block_slider.setEnabled(is_adaptive)
+        self._threshold_block_label.setEnabled(is_adaptive)
 
     def _apply_preview(self, image: np.ndarray, revision: int) -> None:
         self._preview_image_rgb = image
