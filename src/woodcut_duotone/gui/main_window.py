@@ -385,8 +385,25 @@ class MainWindow(QMainWindow):
     def _on_controls_changed(self) -> None:
         if self._suppress_updates:
             return
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "CONTROLS changed: edges low=%s high=%s thickness=%s apply_on=%s thr_mode=%s block_size=%s",
+            self._edges_low_slider.value(),
+            self._edges_high_slider.value(),
+            self._edges_thickness_slider.value(),
+            self._edges_apply_on.currentText(),
+            self._threshold_mode.currentText(),
+            self._threshold_block_slider.value(),
+        )
         self.state.push_undo()
         self._sync_state_from_controls()
+        logger.info(
+            "EDGES UI->STATE low=%s high=%s thickness=%s apply_on=%s",
+            self.state.params["Edges"]["low"],
+            self.state.params["Edges"]["high"],
+            self.state.params["Edges"]["thickness"],
+            self.state.params["Edges"]["apply_on"],
+        )
         self._update_threshold_controls()
         self._update_action_states()
         self._schedule_preview()
@@ -470,19 +487,13 @@ class MainWindow(QMainWindow):
             self._sync_render_flags()
             return
         self._sync_render_flags()
-        logging.getLogger(__name__).debug(
-            "EDGES UI->STATE low=%s high=%s thickness=%s apply_on=%s",
-            self.state.params["Edges"]["low"],
-            self.state.params["Edges"]["high"],
-            self.state.params["Edges"]["thickness"],
-            self.state.params["Edges"]["apply_on"],
-        )
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
-        logging.getLogger(__name__).debug(
-            "SCHEDULE render: expected_rev=%s has_image=%s",
+        logging.getLogger(__name__).info(
+            "SCHEDULE render expected_rev=%s in_flight=%s pending=%s",
             self._expected_revision,
-            self.state.original_image_rgb is not None,
+            self._render_scheduler.in_flight,
+            self._render_scheduler.pending,
         )
         self._runner.schedule(
             self.state.original_image_rgb, pipeline, self._expected_revision
@@ -553,7 +564,13 @@ class MainWindow(QMainWindow):
 
     def _on_worker_done(self, revision: int, image, error: str | None) -> None:
         self._sync_render_flags()
-        if not should_apply_revision(self._expected_revision, revision):
+        accepted = should_apply_revision(self._expected_revision, revision)
+        logging.getLogger(__name__).info(
+            "APPLY preview rev=%s accepted=%s",
+            revision,
+            accepted,
+        )
+        if not accepted:
             self._log_ignored_revision(revision)
             self._finalize_render_cycle()
             return

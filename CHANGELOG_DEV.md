@@ -327,3 +327,12 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Issues / risks
 - Runtime assertions are for development diagnostics; remove or guard if they become noisy.
+
+## 2025-12-29 — Hotfix GUI control events/logging
+### Done
+- Added INFO logs for control changes, UI-to-state propagation, schedule, and apply paths.
+- Ensured Edges low/high values are logged from both widgets and AppState.
+- Added tests confirming Edges low/high default types are ints.
+
+### Issues / risks
+- INFO logs are noisy during rapid slider drags; downgrade to DEBUG once diagnosis is complete.
