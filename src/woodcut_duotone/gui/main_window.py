@@ -132,10 +132,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
 
         left_panel = self._build_left_panel()
-        layout.addWidget(left_panel, 0)
+        layout.addWidget(left_panel, 1)
 
         right_panel = self._build_preview_panel()
-        layout.addWidget(right_panel, 1)
+        layout.addWidget(right_panel, 2)
 
         self.setCentralWidget(central)
 
@@ -274,7 +274,7 @@ class MainWindow(QMainWindow):
         self._original_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._original_image_label = QLabel()
         self._original_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._original_image_label.setMinimumSize(320, 240)
+        self._original_image_label.setMinimumSize(480, 360)
         self._original_image_label.setStyleSheet("QLabel { background: #222; }")
 
         original_box = QVBoxLayout()
@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_image_label = QLabel()
         self._preview_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_image_label.setMinimumSize(320, 240)
+        self._preview_image_label.setMinimumSize(480, 360)
         self._preview_image_label.setStyleSheet("QLabel { background: #222; }")
 
         preview_box = QVBoxLayout()
@@ -296,8 +296,8 @@ class MainWindow(QMainWindow):
 
         row = QHBoxLayout()
         row.setAlignment(Qt.AlignmentFlag.AlignTop)
-        row.addLayout(original_box)
-        row.addLayout(preview_box)
+        row.addLayout(original_box, 1)
+        row.addLayout(preview_box, 1)
 
         layout.addLayout(row)
         layout.addStretch(1)

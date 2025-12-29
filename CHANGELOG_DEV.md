@@ -319,6 +319,16 @@ This is a running engineering diary. It must be updated after every task.
 ### Decisions
 - Tests use the fixture image and compare black pixel counts to verify parameter influence.
 
+## 2025-12-29 — GUI preview sizing
+### Done
+- Increased preview label minimum sizes and gave the preview panel more layout stretch for larger images.
+
+### Issues / risks
+- Large minimum sizes may feel tight on smaller screens; adjust if needed.
+
+### Decisions
+- Used a modest 480x360 minimum with stronger right-panel stretch to keep layout responsive.
+
 ## 2025-12-29 — Test fix edges low/high regression
 ### Done
 - Reworked the luma regression test to use a deterministic soft edge (larger 1D kernel) so Canny thresholds diverge.
