@@ -147,3 +147,20 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Stage 9: Edge enhancement step (EdgesStep) with unit and golden tests.
+
+## 2025-12-29 — Stage 9 Edges step + runner updates
+### Done
+- Added `EdgesStep` (Canny) with `low`, `high`, `thickness`, and `apply_on` parameters.
+- Added unit tests, pipeline smoke coverage, and a golden fixture `tests/fixtures/golden/test_8x8_edges.png`.
+- Extended the manual runner with optional edge overlays and documented usage in `README.md`.
+
+### Issues / risks
+- Edge output may vary with OpenCV version; regenerate the golden fixture if a mismatch occurs.
+
+### Decisions
+- Edges are computed on either luma or binary input, then overlaid as black ink on the original RGB.
+- `thickness` uses dilation with an elliptical kernel sized by `2*thickness+1`.
+- Golden fixture is produced from the pipeline: grayscale -> CLAHE -> blur -> threshold -> morphology -> edges.
+
+### Next
+- Stage 10: GUI v0 (two previews, open/save, and step controls).

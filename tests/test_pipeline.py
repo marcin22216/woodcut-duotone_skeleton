@@ -4,6 +4,7 @@ from woodcut_duotone.core.pipeline import Pipeline, Step
 from woodcut_duotone.core.steps.base import BaseStep
 from woodcut_duotone.core.steps.blur import GaussianBlurStep
 from woodcut_duotone.core.steps.contrast_clahe import CLAHEContrastStep
+from woodcut_duotone.core.steps.edges import EdgesStep
 from woodcut_duotone.core.steps.grayscale import GrayscaleStep
 from woodcut_duotone.core.steps.morphology import MorphologyStep
 from woodcut_duotone.core.steps.threshold import ThresholdStep
@@ -137,3 +138,22 @@ def test_pipeline_with_morphology_smoke() -> None:
     assert result.dtype == np.uint8
     values = np.unique(result)
     assert set(values.tolist()).issubset({0, 255})
+
+
+def test_pipeline_with_edges_smoke() -> None:
+    image = np.zeros((6, 6, 3), dtype=np.uint8)
+    pipeline = Pipeline(
+        [
+            GrayscaleStep(),
+            CLAHEContrastStep(),
+            GaussianBlurStep(),
+            ThresholdStep(),
+            MorphologyStep(),
+            EdgesStep(),
+        ]
+    )
+
+    result = pipeline.run(image)
+
+    assert result.shape == image.shape
+    assert result.dtype == np.uint8

@@ -41,7 +41,7 @@ pytest -q
 
 ## Manual test runner (pre-GUI)
 Run the current pipeline on a single image to validate results before the GUI.
-The runner also supports optional morphology cleanup.
+The runner also supports optional morphology cleanup and edge overlays.
 
 Examples:
 ```bash
@@ -49,6 +49,7 @@ python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/otsu.pn
 python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/adaptive.png --mode adaptive --block-size 31 --bias 5
 python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/invert.png --mode otsu --invert 1 --bias 10
 python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/morph.png --morph-op close --morph-kernel 5
+python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/edges.png --edges 1 --edge-low 40 --edge-high 120
 ```
 
 ## Repository layout

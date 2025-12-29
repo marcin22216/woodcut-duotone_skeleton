@@ -8,6 +8,7 @@ import sys
 from woodcut_duotone.core.pipeline import Pipeline
 from woodcut_duotone.core.steps import (
     CLAHEContrastStep,
+    EdgesStep,
     GaussianBlurStep,
     GrayscaleStep,
     MorphologyStep,
@@ -64,6 +65,42 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Morphology iterations (optional)",
     )
+    parser.add_argument(
+        "--edges",
+        dest="edges",
+        type=int,
+        choices=[0, 1],
+        default=0,
+        help="Enable edge overlay (0 or 1)",
+    )
+    parser.add_argument(
+        "--edge-low",
+        dest="edge_low",
+        type=int,
+        default=60,
+        help="Canny low threshold",
+    )
+    parser.add_argument(
+        "--edge-high",
+        dest="edge_high",
+        type=int,
+        default=140,
+        help="Canny high threshold",
+    )
+    parser.add_argument(
+        "--edge-thickness",
+        dest="edge_thickness",
+        type=int,
+        default=1,
+        help="Edge thickness (dilation radius)",
+    )
+    parser.add_argument(
+        "--edge-apply-on",
+        dest="edge_apply_on",
+        choices=["luma", "binary"],
+        default="luma",
+        help="Edge detection input (luma or binary)",
+    )
     return parser
 
 
@@ -102,6 +139,16 @@ def main(argv: list[str] | None = None) -> int:
                 operation=morph_op,
                 kernel_size=morph_kernel,
                 iterations=morph_iters,
+            )
+        )
+
+    if parsed.edges == 1:
+        pipeline_steps.append(
+            EdgesStep(
+                low=parsed.edge_low,
+                high=parsed.edge_high,
+                thickness=parsed.edge_thickness,
+                apply_on=parsed.edge_apply_on,
             )
         )
 
