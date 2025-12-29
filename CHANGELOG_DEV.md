@@ -216,3 +216,20 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Stage 13: presets/export/import of settings and refinement of parameter UI.
+
+## 2025-12-29 — Hotfix GUI preview + layout
+### Done
+- Added revision-aware preview guards and debug logging for render scheduling/completion.
+- Ensured preview updates only apply to the latest render request and errors do not blank the preview.
+- Kept QImage creation detached from numpy buffers to avoid black/unstable previews.
+- Adjusted preview layout to align original/preview panels to the top of the window.
+- Added state tests covering revision selection rules.
+
+### Issues / risks
+- Debug logging is currently at DEBUG level; ensure production logging config filters it if needed.
+
+### Decisions
+- Revision checks accept only exact matches; older or unexpected revisions are ignored.
+
+### Next
+- Resume planned GUI refinements after confirming preview stability.

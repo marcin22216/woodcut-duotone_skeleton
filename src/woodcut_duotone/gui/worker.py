@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import logging
+
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from woodcut_duotone.core.pipeline import Pipeline
@@ -23,8 +25,17 @@ class PipelineWorker(QObject):
         try:
             result = self._pipeline.run(self._image)
         except Exception as exc:  # pragma: no cover - GUI error handling
+            logging.getLogger(__name__).debug(
+                "worker finish rev=%s error=%s", self._revision, exc
+            )
             self.failed.emit(self._revision, str(exc))
         else:
+            logging.getLogger(__name__).debug(
+                "worker finish rev=%s ok shape=%s dtype=%s",
+                self._revision,
+                getattr(result, "shape", None),
+                getattr(result, "dtype", None),
+            )
             self.finished.emit(self._revision, result)
 
 

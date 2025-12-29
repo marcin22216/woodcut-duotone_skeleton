@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import (
@@ -253,7 +255,7 @@ class MainWindow(QMainWindow):
 
     def _build_preview_panel(self) -> QWidget:
         panel = QWidget()
-        layout = QHBoxLayout(panel)
+        layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._original_label = QLabel("Original")
@@ -264,6 +266,7 @@ class MainWindow(QMainWindow):
         self._original_image_label.setStyleSheet("QLabel { background: #222; }")
 
         original_box = QVBoxLayout()
+        original_box.setAlignment(Qt.AlignmentFlag.AlignTop)
         original_box.addWidget(self._original_label)
         original_box.addWidget(self._original_image_label)
 
@@ -275,11 +278,17 @@ class MainWindow(QMainWindow):
         self._preview_image_label.setStyleSheet("QLabel { background: #222; }")
 
         preview_box = QVBoxLayout()
+        preview_box.setAlignment(Qt.AlignmentFlag.AlignTop)
         preview_box.addWidget(self._preview_label)
         preview_box.addWidget(self._preview_image_label)
 
-        layout.addLayout(original_box)
-        layout.addLayout(preview_box)
+        row = QHBoxLayout()
+        row.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row.addLayout(original_box)
+        row.addLayout(preview_box)
+
+        layout.addLayout(row)
+        layout.addStretch(1)
 
         return panel
 
@@ -425,7 +434,14 @@ class MainWindow(QMainWindow):
             return
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
-        self._runner.schedule(self.state.original_image_rgb, pipeline, self._expected_revision)
+        logging.getLogger(__name__).debug(
+            "schedule render rev=%s image=%s",
+            self._expected_revision,
+            self.state.original_image_rgb is not None,
+        )
+        self._runner.schedule(
+            self.state.original_image_rgb, pipeline, self._expected_revision
+        )
 
     def _open_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
