@@ -11,6 +11,21 @@ def _make_test_image() -> np.ndarray:
     return image
 
 
+def _make_soft_edge_luma(size: int = 32, kernel_size: int = 15) -> np.ndarray:
+    step = np.zeros((size, size), dtype=np.uint8)
+    step[:, size // 2 :] = 255
+    half = kernel_size // 2
+    ramp = np.arange(1, half + 2)
+    kernel = np.concatenate([ramp, ramp[-2::-1]]).astype(np.float32)
+    kernel /= float(kernel.sum())
+    padded = np.pad(step.astype(np.float32), ((0, 0), (half, half)), mode="edge")
+    blurred = np.empty_like(step, dtype=np.float32)
+    for x in range(size):
+        window = padded[:, x : x + kernel_size]
+        blurred[:, x] = (window * kernel).sum(axis=1)
+    return np.rint(blurred).clip(0, 255).astype(np.uint8)
+
+
 def test_edges_output_shape_dtype() -> None:
     image = _make_test_image()
     step = EdgesStep()
@@ -83,19 +98,18 @@ def test_edges_apply_on_changes_output() -> None:
 
 
 def test_edges_low_high_effect_stronger_on_luma_source() -> None:
-    gradient = np.tile(np.linspace(0, 255, 16, dtype=np.uint8), (16, 1))
-    binary = np.where(gradient > 127, 255, 0).astype(np.uint8)
-    image = np.stack((binary, binary, binary), axis=-1)
+    luma = _make_soft_edge_luma(32, kernel_size=15)
+    image = np.full((32, 32, 3), 200, dtype=np.uint8)
 
     low_luma = EdgesStep(low=10, high=30, thickness=1, apply_on="luma")
     high_luma = EdgesStep(low=180, high=250, thickness=1, apply_on="luma")
 
-    low_luma_out = low_luma.apply(image, params={"source_luma": gradient})
-    high_luma_out = high_luma.apply(image, params={"source_luma": gradient})
+    low_luma_out = low_luma.apply(image, params={"source_luma": luma})
+    high_luma_out = high_luma.apply(image, params={"source_luma": luma})
 
-    low_luma_black = np.sum(np.all(low_luma_out == 0, axis=-1))
-    high_luma_black = np.sum(np.all(high_luma_out == 0, axis=-1))
-    diff_luma = abs(int(low_luma_black) - int(high_luma_black))
+    low_luma_edges = np.sum(np.any(low_luma_out != image, axis=-1))
+    high_luma_edges = np.sum(np.any(high_luma_out != image, axis=-1))
+    diff_luma = abs(int(low_luma_edges) - int(high_luma_edges))
 
     low_bin = EdgesStep(low=10, high=30, thickness=1, apply_on="binary")
     high_bin = EdgesStep(low=180, high=250, thickness=1, apply_on="binary")
@@ -103,8 +117,8 @@ def test_edges_low_high_effect_stronger_on_luma_source() -> None:
     low_bin_out = low_bin.apply(image, params=None)
     high_bin_out = high_bin.apply(image, params=None)
 
-    low_bin_black = np.sum(np.all(low_bin_out == 0, axis=-1))
-    high_bin_black = np.sum(np.all(high_bin_out == 0, axis=-1))
-    diff_bin = abs(int(low_bin_black) - int(high_bin_black))
+    low_bin_edges = np.sum(np.any(low_bin_out != image, axis=-1))
+    high_bin_edges = np.sum(np.any(high_bin_out != image, axis=-1))
+    diff_bin = abs(int(low_bin_edges) - int(high_bin_edges))
 
     assert diff_luma > diff_bin

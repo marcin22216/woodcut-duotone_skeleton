@@ -319,6 +319,17 @@ This is a running engineering diary. It must be updated after every task.
 ### Decisions
 - Tests use the fixture image and compare black pixel counts to verify parameter influence.
 
+## 2025-12-29 — Test fix edges low/high regression
+### Done
+- Reworked the luma regression test to use a deterministic soft edge (larger 1D kernel) so Canny thresholds diverge.
+- Counted edge pixels via output-vs-input differences to avoid the all-black false zero.
+
+### Issues / risks
+- Canny sensitivity still depends on the soft-edge kernel width; keep this test image small and deterministic.
+
+### Decisions
+- Kept the test NumPy-only (no cv2), matching the stability requirement.
+
 ## 2025-12-29 — Hotfix GUI edges low/high binding
 ### Done
 - Added explicit runtime logging of Edges params before scheduling renders.
