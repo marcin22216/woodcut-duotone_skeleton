@@ -39,7 +39,13 @@ from woodcut_duotone.core.steps import (
     MorphologyStep,
     ThresholdStep,
 )
-from woodcut_duotone.gui.state import AppState, RenderScheduler, should_apply_revision
+from woodcut_duotone.gui.state import (
+    AppState,
+    KNOWN_STEPS,
+    RenderScheduler,
+    build_step_names,
+    should_apply_revision,
+)
 from woodcut_duotone.gui.worker import DebouncedPipelineRunner
 from woodcut_duotone.io import load_image, rgb_to_qimage, save_image
 
@@ -320,7 +326,7 @@ class MainWindow(QMainWindow):
 
         self._populate_step_list()
 
-        threshold_params = self.state.params["threshold"]
+        threshold_params = self.state.params["Threshold"]
         self._threshold_mode.setCurrentText(threshold_params["mode"])
         self._threshold_bias_slider.setValue(threshold_params["bias"])
         self._threshold_bias_label.setText(str(threshold_params["bias"]))
@@ -329,14 +335,14 @@ class MainWindow(QMainWindow):
         self._threshold_block_label.setText(str(threshold_params["block_size"]))
         self._update_threshold_controls()
 
-        morph_params = self.state.params["morphology"]
+        morph_params = self.state.params["Morphology"]
         self._morph_op.setCurrentText(morph_params["operation"])
         self._morph_kernel_slider.setValue(morph_params["kernel_size"])
         self._morph_kernel_label.setText(str(morph_params["kernel_size"]))
         self._morph_iters_slider.setValue(morph_params["iterations"])
         self._morph_iters_label.setText(str(morph_params["iterations"]))
 
-        edges_params = self.state.params["edges"]
+        edges_params = self.state.params["Edges"]
         self._edges_apply_on.setCurrentText(edges_params["apply_on"])
         self._edges_low_slider.setValue(edges_params["low"])
         self._edges_low_label.setText(str(edges_params["low"]))
@@ -358,18 +364,18 @@ class MainWindow(QMainWindow):
                 item.checkState() == Qt.CheckState.Checked
             )
 
-        self.state.params["threshold"] = {
+        self.state.params["Threshold"] = {
             "mode": self._threshold_mode.currentText(),
             "invert": self._threshold_invert.isChecked(),
             "bias": int(self._threshold_bias_slider.value()),
             "block_size": int(self._threshold_block_slider.value()),
         }
-        self.state.params["morphology"] = {
+        self.state.params["Morphology"] = {
             "operation": self._morph_op.currentText(),
             "kernel_size": int(self._morph_kernel_slider.value()),
             "iterations": int(self._morph_iters_slider.value()),
         }
-        self.state.params["edges"] = {
+        self.state.params["Edges"] = {
             "low": int(self._edges_low_slider.value()),
             "high": int(self._edges_high_slider.value()),
             "thickness": int(self._edges_thickness_slider.value()),
@@ -408,53 +414,51 @@ class MainWindow(QMainWindow):
     def _build_pipeline(self) -> Pipeline:
         params = self.state.params
         enabled = self.state.enabled
+        step_names = build_step_names(self.state.step_order, enabled)
+        logging.getLogger(__name__).debug("PIPELINE steps=%s", step_names)
         logging.getLogger(__name__).debug(
-            "PIPELINE params: threshold=%s block_size=%s edges_enabled=%s low=%s high=%s thickness=%s apply_on=%s",
-            params["threshold"]["mode"],
-            params["threshold"]["block_size"],
-            enabled.get("edges", False),
-            params["edges"]["low"],
-            params["edges"]["high"],
-            params["edges"]["thickness"],
-            params["edges"]["apply_on"],
+            "Edges enabled=%s params=%s",
+            enabled.get("Edges", False),
+            params["Edges"],
         )
         steps_by_name = {
-            "grayscale": GrayscaleStep(enabled=enabled["grayscale"]),
-            "clahe": CLAHEContrastStep(
-                enabled=enabled["clahe"],
-                clip_limit=params["clahe"]["clip_limit"],
-                tile_grid_size=params["clahe"]["tile_grid_size"],
+            "Grayscale": GrayscaleStep(enabled=enabled["Grayscale"]),
+            "CLAHE Contrast": CLAHEContrastStep(
+                enabled=enabled["CLAHE Contrast"],
+                clip_limit=params["CLAHE Contrast"]["clip_limit"],
+                tile_grid_size=params["CLAHE Contrast"]["tile_grid_size"],
             ),
-            "blur": GaussianBlurStep(
-                enabled=enabled["blur"],
-                strength=params["blur"]["strength"],
+            "Gaussian Blur": GaussianBlurStep(
+                enabled=enabled["Gaussian Blur"],
+                strength=params["Gaussian Blur"]["strength"],
             ),
-            "threshold": ThresholdStep(
-                enabled=enabled["threshold"],
-                mode=params["threshold"]["mode"],
-                invert=params["threshold"]["invert"],
-                bias=params["threshold"]["bias"],
-                block_size=params["threshold"]["block_size"],
+            "Threshold": ThresholdStep(
+                enabled=enabled["Threshold"],
+                mode=params["Threshold"]["mode"],
+                invert=params["Threshold"]["invert"],
+                bias=params["Threshold"]["bias"],
+                block_size=params["Threshold"]["block_size"],
             ),
-            "morphology": MorphologyStep(
-                enabled=enabled["morphology"],
-                operation=params["morphology"]["operation"],
-                kernel_size=params["morphology"]["kernel_size"],
-                iterations=params["morphology"]["iterations"],
+            "Morphology": MorphologyStep(
+                enabled=enabled["Morphology"],
+                operation=params["Morphology"]["operation"],
+                kernel_size=params["Morphology"]["kernel_size"],
+                iterations=params["Morphology"]["iterations"],
             ),
-            "edges": EdgesStep(
-                enabled=enabled["edges"],
-                low=params["edges"]["low"],
-                high=params["edges"]["high"],
-                thickness=params["edges"]["thickness"],
-                apply_on=params["edges"]["apply_on"],
+            "Edges": EdgesStep(
+                enabled=enabled["Edges"],
+                low=params["Edges"]["low"],
+                high=params["Edges"]["high"],
+                thickness=params["Edges"]["thickness"],
+                apply_on=params["Edges"]["apply_on"],
             ),
         }
-        ordered_steps = [
-            steps_by_name[name]
-            for name in self.state.step_order
-            if name in steps_by_name
-        ]
+        ordered_steps = []
+        for name in self.state.step_order:
+            if name not in steps_by_name:
+                raise ValueError(f"Unknown step in pipeline: {name}")
+            if enabled.get(name, False):
+                ordered_steps.append(steps_by_name[name])
         return Pipeline(ordered_steps)
 
     def _schedule_preview(self) -> None:
@@ -617,15 +621,9 @@ class MainWindow(QMainWindow):
         self._step_list.clear()
         self._step_items.clear()
         for step_name in self.state.step_order:
-            label = {
-                "grayscale": "Grayscale",
-                "clahe": "CLAHE Contrast",
-                "blur": "Gaussian Blur",
-                "threshold": "Threshold",
-                "morphology": "Morphology",
-                "edges": "Edges",
-            }.get(step_name, step_name)
-            item = QListWidgetItem(label)
+            if step_name not in KNOWN_STEPS:
+                continue
+            item = QListWidgetItem(step_name)
             item.setData(Qt.ItemDataRole.UserRole, step_name)
             item.setFlags(
                 item.flags()

@@ -295,3 +295,15 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Remove diagnostic logs and revisit GUI parameter UX.
+
+## 2025-12-29 — Hotfix GUI edges mapping
+### Done
+- Unified step naming across state/GUI to ensure Edges is included when enabled.
+- Added a pure-Python step order filter with tests to prevent regressions.
+- Logged pipeline step names and Edges params for quick verification.
+
+### Issues / risks
+- Any mismatch between display names and step keys now raises a ValueError for early detection.
+
+### Decisions
+- Step names are the single source of truth (`KNOWN_STEPS`) used by state, GUI list, and pipeline build.

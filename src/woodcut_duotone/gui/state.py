@@ -8,34 +8,54 @@ from typing import Any
 import numpy as np
 
 
+KNOWN_STEPS = [
+    "Grayscale",
+    "CLAHE Contrast",
+    "Gaussian Blur",
+    "Threshold",
+    "Morphology",
+    "Edges",
+]
+
+
+def build_step_names(step_order: list[str], enabled: dict[str, bool]) -> list[str]:
+    steps = []
+    for name in step_order:
+        if name not in KNOWN_STEPS:
+            raise ValueError(f"Unknown step in order: {name}")
+        if enabled.get(name, False):
+            steps.append(name)
+    return steps
+
+
 def _default_enabled() -> dict[str, bool]:
     return {
-        "grayscale": True,
-        "clahe": True,
-        "blur": True,
-        "threshold": True,
-        "morphology": True,
-        "edges": False,
+        "Grayscale": True,
+        "CLAHE Contrast": True,
+        "Gaussian Blur": True,
+        "Threshold": True,
+        "Morphology": True,
+        "Edges": False,
     }
 
 
 def _default_params() -> dict[str, dict[str, Any]]:
     return {
-        "grayscale": {},
-        "clahe": {"clip_limit": 2.0, "tile_grid_size": 8},
-        "blur": {"strength": 1},
-        "threshold": {
+        "Grayscale": {},
+        "CLAHE Contrast": {"clip_limit": 2.0, "tile_grid_size": 8},
+        "Gaussian Blur": {"strength": 1},
+        "Threshold": {
             "mode": "otsu",
             "invert": False,
             "bias": 0,
             "block_size": 31,
         },
-        "morphology": {
+        "Morphology": {
             "operation": "close",
             "kernel_size": 3,
             "iterations": 1,
         },
-        "edges": {
+        "Edges": {
             "low": 60,
             "high": 140,
             "thickness": 1,
@@ -45,14 +65,7 @@ def _default_params() -> dict[str, dict[str, Any]]:
 
 
 def _default_step_order() -> list[str]:
-    return [
-        "grayscale",
-        "clahe",
-        "blur",
-        "threshold",
-        "morphology",
-        "edges",
-    ]
+    return list(KNOWN_STEPS)
 
 
 class AppState:
