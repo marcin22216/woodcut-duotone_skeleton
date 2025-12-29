@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QSlider,
     QToolBar,
@@ -48,6 +50,12 @@ from woodcut_duotone.gui.state import (
 )
 from woodcut_duotone.gui.worker import DebouncedPipelineRunner
 from woodcut_duotone.io import load_image, rgb_to_qimage, save_image
+from woodcut_duotone.io.preset_io import (
+    apply_preset_dict,
+    load_preset_file,
+    save_preset_file,
+    state_to_preset_dict,
+)
 
 
 class StepListWidget(QListWidget):
@@ -77,15 +85,24 @@ class StepListWidget(QListWidget):
 
 
 class ImageView(QWidget):
+    roiChanged = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmap: QPixmap | None = None
         self._zoom = 1.0
         self._pan = QPointF(0.0, 0.0)
-        self._dragging = False
+        self._panning = False
         self._last_pos = QPointF(0.0, 0.0)
+        self._roi_enabled = False
+        self._roi_selectable = False
+        self._roi_dragging = False
+        self._roi_drag_start = QPointF(0.0, 0.0)
+        self._roi_drag_rect: QRectF | None = None
+        self._roi_image_rect: QRectF | None = None
         self._min_zoom = 0.25
         self._max_zoom = 8.0
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
     def set_image(self, image, reset_view: bool = False) -> None:
         self._pixmap = QPixmap.fromImage(image) if image is not None else None
@@ -98,6 +115,28 @@ class ImageView(QWidget):
         self._pan = QPointF(0.0, 0.0)
         self.update()
 
+    def set_roi_selectable(self, selectable: bool) -> None:
+        self._roi_selectable = selectable
+
+    def set_roi_enabled(self, enabled: bool) -> None:
+        self._roi_enabled = enabled
+        self._roi_dragging = False
+        self._roi_drag_rect = None
+        self.update()
+        self.roiChanged.emit()
+
+    def clear_roi(self) -> None:
+        self._roi_image_rect = None
+        self._roi_dragging = False
+        self._roi_drag_rect = None
+        self.update()
+        self.roiChanged.emit()
+
+    def get_roi_rect(self) -> QRectF | None:
+        if not self._roi_enabled or self._roi_image_rect is None:
+            return None
+        return QRectF(self._roi_image_rect)
+
     def _fit_scale(self) -> float:
         if self._pixmap is None:
             return 1.0
@@ -107,12 +146,12 @@ class ImageView(QWidget):
             return 1.0
         return min(self.width() / width, self.height() / height)
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#222"))
+    def _target_rect(self) -> tuple[QRectF, float] | None:
         if self._pixmap is None:
-            return
+            return None
         scale = self._fit_scale() * self._zoom
+        if scale <= 0:
+            return None
         center = QPointF(self.rect().center())
         size = QSizeF(
             self._pixmap.width() * scale,
@@ -123,8 +162,72 @@ class ImageView(QWidget):
             center.y() - size.height() / 2,
         )
         target = QRectF(top_left + self._pan, size)
+        return target, scale
+
+    def _view_to_image(self, point: QPointF) -> QPointF | None:
+        target_data = self._target_rect()
+        if target_data is None or self._pixmap is None:
+            return None
+        target, scale = target_data
+        if scale <= 0:
+            return None
+        x = (point.x() - target.left()) / scale
+        y = (point.y() - target.top()) / scale
+        x = max(0.0, min(x, float(self._pixmap.width())))
+        y = max(0.0, min(y, float(self._pixmap.height())))
+        return QPointF(x, y)
+
+    def _image_to_view(self, rect: QRectF) -> QRectF | None:
+        target_data = self._target_rect()
+        if target_data is None:
+            return None
+        target, scale = target_data
+        top_left = QPointF(
+            target.left() + rect.left() * scale,
+            target.top() + rect.top() * scale,
+        )
+        size = QSizeF(rect.width() * scale, rect.height() * scale)
+        return QRectF(top_left, size)
+
+    def _commit_roi_from_view(self, rect: QRectF) -> None:
+        if self._pixmap is None:
+            return
+        start = self._view_to_image(rect.topLeft())
+        end = self._view_to_image(rect.bottomRight())
+        if start is None or end is None:
+            return
+        x0 = min(start.x(), end.x())
+        x1 = max(start.x(), end.x())
+        y0 = min(start.y(), end.y())
+        y1 = max(start.y(), end.y())
+        if x1 - x0 < 1.0 or y1 - y0 < 1.0:
+            self._roi_image_rect = None
+        else:
+            self._roi_image_rect = QRectF(x0, y0, x1 - x0, y1 - y0)
+        self.roiChanged.emit()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#222"))
+        if self._pixmap is None:
+            return
+        target_data = self._target_rect()
+        if target_data is None:
+            return
+        target, _scale = target_data
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.drawPixmap(target, self._pixmap)
+        if self._roi_selectable and self._roi_enabled:
+            rect = self._roi_drag_rect
+            if rect is None and self._roi_image_rect is not None:
+                rect = self._image_to_view(self._roi_image_rect)
+            if rect is not None:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                pen = QPen(QColor(255, 200, 0, 220))
+                pen.setWidth(2)
+                painter.setPen(pen)
+                painter.setBrush(QColor(255, 200, 0, 40))
+                painter.drawRect(rect.normalized())
 
     def wheelEvent(self, event) -> None:  # type: ignore[override]
         if self._pixmap is None:
@@ -148,13 +251,28 @@ class ImageView(QWidget):
         self.update()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() != Qt.MouseButton.LeftButton:
+        if self._pixmap is None:
             return
-        self._dragging = True
-        self._last_pos = event.position()
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._roi_selectable and self._roi_enabled:
+                self._roi_dragging = True
+                self._roi_drag_start = event.position()
+                self._roi_drag_rect = QRectF(self._roi_drag_start, self._roi_drag_start)
+                self.update()
+                return
+            self._panning = True
+            self._last_pos = event.position()
+            return
+        if event.button() == Qt.MouseButton.RightButton and self._roi_selectable:
+            self._panning = True
+            self._last_pos = event.position()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
-        if not self._dragging or self._zoom <= 1.0:
+        if self._roi_dragging:
+            self._roi_drag_rect = QRectF(self._roi_drag_start, event.position())
+            self.update()
+            return
+        if not self._panning or self._zoom <= 1.0:
             return
         current = event.position()
         delta = current - self._last_pos
@@ -163,14 +281,30 @@ class ImageView(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() != Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton and self._roi_dragging:
+            self._roi_dragging = False
+            if self._roi_drag_rect is not None:
+                self._commit_roi_from_view(self._roi_drag_rect.normalized())
+            self._roi_drag_rect = None
+            self.update()
             return
-        self._dragging = False
+        if event.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
+            self._panning = False
 
     def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
         if event.button() != Qt.MouseButton.LeftButton:
             return
         self.reset_view()
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if (
+            event.key() == Qt.Key.Key_Escape
+            and self._roi_selectable
+            and self._roi_enabled
+        ):
+            self.clear_roi()
+            return
+        super().keyPressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -185,6 +319,8 @@ class MainWindow(QMainWindow):
         self._original_qimage = None
         self._preview_qimage = None
         self._preview_image_rgb = None
+        self._preview_snapshot_qimage = None
+        self._compare_snapshot = False
         self._expected_revision = 0
         self._last_ignored_revision: int | None = None
         self._suppress_updates = False
@@ -193,6 +329,7 @@ class MainWindow(QMainWindow):
         self._pending_render = False
 
         self._step_items: dict[str, QListWidgetItem] = {}
+        self._roi_by_revision: dict[int, tuple[int, int, int, int] | None] = {}
 
         self._build_ui()
         self._apply_state_to_controls()
@@ -209,6 +346,14 @@ class MainWindow(QMainWindow):
         self._save_action = QAction("Save As", self)
         self._save_action.triggered.connect(self._save_image)
         self._toolbar.addAction(self._save_action)
+
+        self._save_preset_action = QAction("Save Preset...", self)
+        self._save_preset_action.triggered.connect(self._save_preset)
+        self._toolbar.addAction(self._save_preset_action)
+
+        self._load_preset_action = QAction("Load Preset...", self)
+        self._load_preset_action.triggered.connect(self._load_preset)
+        self._toolbar.addAction(self._load_preset_action)
 
         self._toolbar.addSeparator()
 
@@ -381,9 +526,32 @@ class MainWindow(QMainWindow):
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_image_label = ImageView()
         self._preview_image_label.setMinimumSize(480, 360)
+        self._preview_image_label.set_roi_selectable(True)
+        self._preview_image_label.roiChanged.connect(self._on_preview_roi_changed)
 
         preview_box = QVBoxLayout()
         preview_box.setAlignment(Qt.AlignmentFlag.AlignTop)
+        snapshot_controls = QHBoxLayout()
+        self._snapshot_button = QPushButton("Snapshot")
+        self._snapshot_button.clicked.connect(self._take_snapshot)
+        self._compare_toggle = QCheckBox("Compare")
+        self._compare_toggle.toggled.connect(self._toggle_compare)
+        self._clear_snapshot_button = QPushButton("Clear snapshot")
+        self._clear_snapshot_button.clicked.connect(self._clear_snapshot)
+        snapshot_controls.addWidget(self._snapshot_button)
+        snapshot_controls.addWidget(self._compare_toggle)
+        snapshot_controls.addWidget(self._clear_snapshot_button)
+        snapshot_controls.addStretch(1)
+        preview_box.addLayout(snapshot_controls)
+        roi_controls = QHBoxLayout()
+        self._roi_preview_toggle = QCheckBox("ROI preview")
+        self._roi_preview_toggle.toggled.connect(self._on_roi_toggled)
+        self._roi_clear_button = QPushButton("Clear ROI")
+        self._roi_clear_button.clicked.connect(self._clear_roi)
+        roi_controls.addWidget(self._roi_preview_toggle)
+        roi_controls.addWidget(self._roi_clear_button)
+        roi_controls.addStretch(1)
+        preview_box.addLayout(roi_controls)
         preview_box.addWidget(self._preview_label)
         preview_box.addWidget(self._preview_image_label)
 
@@ -582,15 +750,19 @@ class MainWindow(QMainWindow):
         self._sync_render_flags()
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
+        image = self.state.original_image_rgb
+        roi = self._get_active_roi()
+        roi_slice = None
+        if roi is not None:
+            image, roi_slice = self._crop_for_roi(image, roi)
+        self._roi_by_revision[self._expected_revision] = roi_slice
         logging.getLogger(__name__).info(
             "SCHEDULE render expected_rev=%s in_flight=%s pending=%s",
             self._expected_revision,
             self._render_scheduler.in_flight,
             self._render_scheduler.pending,
         )
-        self._runner.schedule(
-            self.state.original_image_rgb, pipeline, self._expected_revision
-        )
+        self._runner.schedule(image, pipeline, self._expected_revision)
 
     def _open_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -608,7 +780,9 @@ class MainWindow(QMainWindow):
         self._set_original_image(image)
         self._preview_image_rgb = None
         self._preview_qimage = None
+        self._preview_image_label.clear_roi()
         self._update_label_pixmap(self._preview_image_label, None, reset_view=True)
+        self._clear_snapshot()
         self._update_action_states()
         logging.getLogger(__name__).debug(
             "OPEN loaded: shape=%s dtype=%s",
@@ -619,7 +793,13 @@ class MainWindow(QMainWindow):
         self._schedule_preview()
 
     def _save_image(self) -> None:
-        if self.state.preview_image_rgb is None:
+        if self.state.original_image_rgb is None:
+            QMessageBox.information(self, "Save", "No image loaded to save.")
+            return
+        roi_active = self._roi_preview_toggle.isChecked() and (
+            self._preview_image_label.get_roi_rect() is not None
+        )
+        if self.state.preview_image_rgb is None and not roi_active:
             QMessageBox.information(self, "Save", "No preview available to save.")
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -628,9 +808,45 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            save_image(path, self.state.preview_image_rgb)
+            if roi_active:
+                pipeline = self._build_pipeline()
+                result = pipeline.run(self.state.original_image_rgb.copy())
+                save_image(path, result)
+            else:
+                save_image(path, self.state.preview_image_rgb)
         except Exception as exc:  # pragma: no cover - GUI error handling
             QMessageBox.critical(self, "Save failed", str(exc))
+
+    def _save_preset(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Preset", "", "Preset (*.json)"
+        )
+        if not path:
+            return
+        preset = state_to_preset_dict(self.state)
+        try:
+            save_preset_file(path, preset)
+        except Exception as exc:  # pragma: no cover - GUI error handling
+            QMessageBox.critical(self, "Save preset failed", str(exc))
+
+    def _load_preset(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Preset", "", "Preset (*.json)"
+        )
+        if not path:
+            return
+        try:
+            preset = load_preset_file(path)
+            snapshot = self.state.snapshot()
+            apply_preset_dict(self.state, preset)
+        except Exception as exc:  # pragma: no cover - GUI error handling
+            QMessageBox.critical(self, "Load preset failed", str(exc))
+            return
+        self.state.undo_stack.append(snapshot)
+        self.state.redo_stack.clear()
+        self._apply_state_to_controls()
+        self._update_action_states()
+        self._schedule_preview()
 
     def _undo(self) -> None:
         if self.state.undo():
@@ -654,6 +870,54 @@ class MainWindow(QMainWindow):
         self._undo_action.setEnabled(self.state.can_undo)
         self._redo_action.setEnabled(self.state.can_redo)
         self._save_action.setEnabled(self.state.preview_image_rgb is not None)
+        if hasattr(self, "_snapshot_button"):
+            self._snapshot_button.setEnabled(self._preview_qimage is not None)
+        if hasattr(self, "_compare_toggle"):
+            self._compare_toggle.setEnabled(self._preview_snapshot_qimage is not None)
+        if hasattr(self, "_clear_snapshot_button"):
+            self._clear_snapshot_button.setEnabled(
+                self._preview_snapshot_qimage is not None
+            )
+        if hasattr(self, "_roi_clear_button"):
+            self._roi_clear_button.setEnabled(
+                self._roi_preview_toggle.isChecked()
+                and self._preview_image_label.get_roi_rect() is not None
+            )
+
+    def _on_roi_toggled(self, checked: bool) -> None:
+        if self._suppress_updates:
+            return
+        self._preview_image_label.set_roi_enabled(checked)
+        self._update_action_states()
+        self._schedule_preview()
+
+    def _clear_roi(self) -> None:
+        self._preview_image_label.clear_roi()
+        self._update_action_states()
+        self._schedule_preview()
+
+    def _on_preview_roi_changed(self) -> None:
+        if self._suppress_updates:
+            return
+        self._update_action_states()
+        self._schedule_preview()
+
+    def _get_active_roi(self) -> QRectF | None:
+        if not self._roi_preview_toggle.isChecked():
+            return None
+        return self._preview_image_label.get_roi_rect()
+
+    def _crop_for_roi(
+        self, image: np.ndarray, roi: QRectF
+    ) -> tuple[np.ndarray, tuple[int, int, int, int] | None]:
+        height, width = image.shape[:2]
+        x0 = max(0, min(int(math.floor(roi.left())), width))
+        y0 = max(0, min(int(math.floor(roi.top())), height))
+        x1 = max(0, min(int(math.ceil(roi.right())), width))
+        y1 = max(0, min(int(math.ceil(roi.bottom())), height))
+        if x1 <= x0 or y1 <= y0:
+            return image, None
+        return image[y0:y1, x0:x1], (x0, y0, x1, y1)
 
     def _on_worker_done(self, revision: int, image, error: str | None) -> None:
         self._sync_render_flags()
@@ -665,10 +929,12 @@ class MainWindow(QMainWindow):
         )
         if not accepted:
             self._log_ignored_revision(revision)
+            self._roi_by_revision.pop(revision, None)
             self._finalize_render_cycle()
             return
         if error:
             QMessageBox.critical(self, "Processing failed", error)
+            self._roi_by_revision.pop(revision, None)
             self._finalize_render_cycle()
             return
         if not isinstance(image, np.ndarray):
@@ -677,6 +943,7 @@ class MainWindow(QMainWindow):
                 revision,
                 type(image),
             )
+            self._roi_by_revision.pop(revision, None)
             self._finalize_render_cycle()
             return
         self._apply_preview(image, revision)
@@ -788,10 +1055,21 @@ class MainWindow(QMainWindow):
         self._threshold_block_label.setEnabled(is_adaptive)
 
     def _apply_preview(self, image: np.ndarray, revision: int) -> None:
+        roi_slice = self._roi_by_revision.pop(revision, None)
+        if roi_slice is not None and self.state.original_image_rgb is not None:
+            x0, y0, x1, y1 = roi_slice
+            composite = self.state.original_image_rgb.copy()
+            if (
+                image.shape[0] == y1 - y0
+                and image.shape[1] == x1 - x0
+                and image.shape[2] == composite.shape[2]
+            ):
+                composite[y0:y1, x0:x1] = image
+                image = composite
         self._preview_image_rgb = image
         self.state.preview_image_rgb = image
         self._preview_qimage = rgb_to_qimage(image)
-        self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+        self._update_preview_view()
         self._update_action_states()
         self.state.last_applied_revision = revision
         logging.getLogger(__name__).debug(
@@ -807,13 +1085,20 @@ class MainWindow(QMainWindow):
     def _render_sync_preview(self) -> None:
         try:
             pipeline = self._build_pipeline()
-            result = pipeline.run(self.state.original_image_rgb.copy())
+            image = self.state.original_image_rgb.copy()
+            roi = self._get_active_roi()
+            roi_slice = None
+            if roi is not None:
+                image, roi_slice = self._crop_for_roi(image, roi)
+            result = pipeline.run(image)
         except Exception as exc:  # pragma: no cover - GUI error handling
             QMessageBox.critical(self, "Processing failed", str(exc))
             return
         revision = self.state.next_render_revision()
         self._expected_revision = revision
         if isinstance(result, np.ndarray):
+            if roi_slice is not None:
+                self._roi_by_revision[revision] = roi_slice
             self._apply_preview(result, revision)
         else:
             logging.getLogger(__name__).debug(
@@ -832,6 +1117,43 @@ class MainWindow(QMainWindow):
     def _sync_render_flags(self) -> None:
         self._render_in_flight = self._render_scheduler.in_flight
         self._pending_render = self._render_scheduler.pending
+
+    def _update_preview_view(self) -> None:
+        if self._compare_snapshot and self._preview_snapshot_qimage is not None:
+            self._update_label_pixmap(
+                self._preview_image_label, self._preview_snapshot_qimage
+            )
+            return
+        self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+
+    def _take_snapshot(self) -> None:
+        if self._preview_qimage is None:
+            return
+        self._preview_snapshot_qimage = self._preview_qimage.copy()
+        self._update_action_states()
+        if self._compare_toggle.isChecked():
+            self._update_preview_view()
+
+    def _clear_snapshot(self) -> None:
+        self._preview_snapshot_qimage = None
+        if hasattr(self, "_compare_toggle"):
+            self._compare_toggle.blockSignals(True)
+            self._compare_toggle.setChecked(False)
+            self._compare_toggle.blockSignals(False)
+        self._compare_snapshot = False
+        if hasattr(self, "_clear_snapshot_button"):
+            self._clear_snapshot_button.setEnabled(False)
+        self._update_preview_view()
+        self._update_action_states()
+
+    def _toggle_compare(self, checked: bool) -> None:
+        if checked and self._preview_snapshot_qimage is None:
+            self._compare_toggle.blockSignals(True)
+            self._compare_toggle.setChecked(False)
+            self._compare_toggle.blockSignals(False)
+            return
+        self._compare_snapshot = checked
+        self._update_preview_view()
 
 
 def run_gui() -> int:

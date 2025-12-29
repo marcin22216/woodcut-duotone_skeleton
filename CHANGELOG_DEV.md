@@ -319,6 +319,41 @@ This is a running engineering diary. It must be updated after every task.
 ### Decisions
 - Tests use the fixture image and compare black pixel counts to verify parameter influence.
 
+## 2025-12-29 — Preset save/load (JSON)
+### Done
+- Added preset IO helpers to serialize/deserialize step order, enabled flags, and params.
+- Added GUI actions to save/load presets with validation and tolerance for missing/extra steps.
+- Added unit tests for preset roundtrip, tolerance, and invalid JSON handling.
+
+### Issues / risks
+- Presets ignore unknown steps; users may need to resave after adding new steps.
+
+### Decisions
+- Preset format is versioned (v1) and stored as JSON with step names as keys.
+
+## 2025-12-29 — GUI preview snapshot/compare
+### Done
+- Added Snapshot/Compare controls for Preview and stored snapshots as deep-copied QImage.
+- Compare toggles the preview source without affecting pipeline or ROI/zoom/pan behavior.
+
+### Issues / risks
+- Snapshot is GUI-only; if preview rendering fails, snapshot may be stale until refreshed.
+
+### Decisions
+- Stored snapshots as QImage copies to keep the diff small and avoid extra conversions.
+
+## 2025-12-29 — GUI preview ROI
+### Done
+- Added ROI selection on the Preview view with an overlay, plus ROI toggle and clear controls.
+- Preview rendering crops to ROI only; save/export still renders full image.
+- Kept ROI mapping aware of zoom/pan/fit via view-to-image transforms.
+
+### Issues / risks
+- ROI preview composites the processed crop over the original for display; full image is rendered on save.
+
+### Decisions
+- ROI is implemented entirely in GUI (no pipeline changes) to keep the diff minimal.
+
 ## 2025-12-29 — GUI preview zoom/pan
 ### Done
 - Replaced preview QLabel widgets with a small ImageView widget supporting wheel zoom, drag pan, and double-click reset.
