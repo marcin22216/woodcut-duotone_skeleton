@@ -164,3 +164,21 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Stage 10: GUI v0 (two previews, open/save, and step controls).
+
+## 2025-12-29 — Stage 10 GUI v0
+### Done
+- Added GUI v0 with two live previews, open/save actions, step toggles, and parameter controls.
+- Implemented debounced background processing worker for responsive preview updates.
+- Added `AppState` with undo/redo snapshots and unit tests for state logic.
+- Updated app entrypoint to launch GUI via `--gui` and documented GUI usage in `README.md`.
+
+### Issues / risks
+- GUI controls are minimal and do not yet support step reordering or preset management.
+- Undo/redo tracks parameter/enabled changes but not image history.
+
+### Decisions
+- Debounce uses a short timer and background thread per run to keep the UI responsive.
+- State snapshots only include step params/enabled flags for now.
+
+### Next
+- Stage 11: step reordering, richer Undo/Redo semantics, and presets.

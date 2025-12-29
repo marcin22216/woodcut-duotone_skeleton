@@ -52,6 +52,12 @@ python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/morph.p
 python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/edges.png --edges 1 --edge-low 40 --edge-high 120
 ```
 
+## GUI
+Launch the GUI with live previews and step controls:
+```bash
+python -m woodcut_duotone.app --gui
+```
+
 ## Repository layout
 - `src/woodcut_duotone/core/` – pipeline + processing steps
 - `src/woodcut_duotone/gui/` – desktop UI + state management
