@@ -1,0 +1,66 @@
+# Woodcut Duotone Converter
+
+A small desktop application (Python) that converts photos/illustrations into a high-contrast, two-color “woodcut / linocut-like” style using a configurable step-by-step pipeline.
+
+## Features
+- Step-based pipeline: resize, denoise, grayscale, local contrast (CLAHE), blur, threshold, morphology cleanup, edges (ink), duotone colorization.
+- GUI with:
+  - live preview (original + processed)
+  - per-step controls (buttons + sliders)
+  - suggested pipeline order, but user-reorderable
+  - Undo/Redo (“like in any app”: revert the most recent user action)
+  - previous/next step navigation
+  - open image from disk
+  - Save As (choose location + filename)
+- Tests-first development: every step is implemented with unit tests and (where suitable) golden image tests.
+
+## Tech stack (target)
+- Python 3.11+
+- OpenCV (cv2), NumPy
+- Qt GUI via PySide6 (recommended)
+
+## Quick start (once code exists)
+### 1) Create environment
+```bash
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# .venv\Scripts\activate   # Windows
+pip install -U pip
+pip install -e ".[dev]"
+```
+
+### 2) Run GUI
+```bash
+python -m woodcut_duotone.app --gui
+```
+
+### 3) Run tests
+```bash
+pytest -q
+```
+
+## Manual test runner (pre-GUI)
+Run the current pipeline on a single image to validate results before the GUI.
+The runner also supports optional morphology cleanup.
+
+Examples:
+```bash
+python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/otsu.png
+python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/adaptive.png --mode adaptive --block-size 31 --bias 5
+python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/invert.png --mode otsu --invert 1 --bias 10
+python scripts/run_pipeline_on_image.py --in samples/photo.jpg --out out/morph.png --morph-op close --morph-kernel 5
+```
+
+## Repository layout
+- `src/woodcut_duotone/core/` – pipeline + processing steps
+- `src/woodcut_duotone/gui/` – desktop UI + state management
+- `src/woodcut_duotone/io/` – image loading/saving and conversions
+- `tests/` – unit tests + golden tests
+- `assets/` – sample images/icons (for development only)
+
+## Development process
+Read `CODEx_RULES.md` before starting any new development stage.
+All work must be covered by tests. Only after tests pass do we proceed to the next stage.
+
+## License
+TBD (choose MIT/Apache-2.0/etc.)

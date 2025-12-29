@@ -1,0 +1,8 @@
+numpy<3,>=1.26
+opencv-python
+Pillow
+PySide6
+
+[dev]
+pytest
+pytest-cov
