@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -74,6 +74,103 @@ class StepListWidget(QListWidget):
             if step_name:
                 order.append(step_name)
         return order
+
+
+class ImageView(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._pixmap: QPixmap | None = None
+        self._zoom = 1.0
+        self._pan = QPointF(0.0, 0.0)
+        self._dragging = False
+        self._last_pos = QPointF(0.0, 0.0)
+        self._min_zoom = 0.25
+        self._max_zoom = 8.0
+
+    def set_image(self, image, reset_view: bool = False) -> None:
+        self._pixmap = QPixmap.fromImage(image) if image is not None else None
+        if reset_view:
+            self.reset_view()
+        self.update()
+
+    def reset_view(self) -> None:
+        self._zoom = 1.0
+        self._pan = QPointF(0.0, 0.0)
+        self.update()
+
+    def _fit_scale(self) -> float:
+        if self._pixmap is None:
+            return 1.0
+        width = self._pixmap.width()
+        height = self._pixmap.height()
+        if width <= 0 or height <= 0:
+            return 1.0
+        return min(self.width() / width, self.height() / height)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#222"))
+        if self._pixmap is None:
+            return
+        scale = self._fit_scale() * self._zoom
+        center = QPointF(self.rect().center())
+        size = QSizeF(
+            self._pixmap.width() * scale,
+            self._pixmap.height() * scale,
+        )
+        top_left = QPointF(
+            center.x() - size.width() / 2,
+            center.y() - size.height() / 2,
+        )
+        target = QRectF(top_left + self._pan, size)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawPixmap(target, self._pixmap)
+
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        if self._pixmap is None:
+            return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        steps = delta / 120.0
+        factor = 1.1**steps
+        new_zoom = max(self._min_zoom, min(self._max_zoom, self._zoom * factor))
+        if new_zoom == self._zoom:
+            return
+        center = QPointF(self.rect().center())
+        scale = self._fit_scale() * self._zoom
+        new_scale = self._fit_scale() * new_zoom
+        cursor = event.position()
+        if scale > 0:
+            image_pos = (cursor - center - self._pan) / scale
+            self._pan = cursor - center - image_pos * new_scale
+        self._zoom = new_zoom
+        self.update()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self._dragging = True
+        self._last_pos = event.position()
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        if not self._dragging or self._zoom <= 1.0:
+            return
+        current = event.position()
+        delta = current - self._last_pos
+        self._pan += delta
+        self._last_pos = current
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self._dragging = False
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self.reset_view()
 
 
 class MainWindow(QMainWindow):
@@ -272,10 +369,8 @@ class MainWindow(QMainWindow):
 
         self._original_label = QLabel("Original")
         self._original_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._original_image_label = QLabel()
-        self._original_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._original_image_label = ImageView()
         self._original_image_label.setMinimumSize(480, 360)
-        self._original_image_label.setStyleSheet("QLabel { background: #222; }")
 
         original_box = QVBoxLayout()
         original_box.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -284,10 +379,8 @@ class MainWindow(QMainWindow):
 
         self._preview_label = QLabel("Preview")
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_image_label = QLabel()
-        self._preview_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_image_label = ImageView()
         self._preview_image_label.setMinimumSize(480, 360)
-        self._preview_image_label.setStyleSheet("QLabel { background: #222; }")
 
         preview_box = QVBoxLayout()
         preview_box.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -515,7 +608,7 @@ class MainWindow(QMainWindow):
         self._set_original_image(image)
         self._preview_image_rgb = None
         self._preview_qimage = None
-        self._update_label_pixmap(self._preview_image_label, None)
+        self._update_label_pixmap(self._preview_image_label, None, reset_view=True)
         self._update_action_states()
         logging.getLogger(__name__).debug(
             "OPEN loaded: shape=%s dtype=%s",
@@ -591,26 +684,24 @@ class MainWindow(QMainWindow):
 
     def _set_original_image(self, image) -> None:
         self._original_qimage = rgb_to_qimage(image)
-        self._update_label_pixmap(self._original_image_label, self._original_qimage)
-
-    def _update_label_pixmap(self, label: QLabel, qimage) -> None:
-        if qimage is None:
-            label.clear()
-            return
-        pixmap = QPixmap.fromImage(qimage)
-        scaled = pixmap.scaled(
-            label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+        self._update_label_pixmap(
+            self._original_image_label,
+            self._original_qimage,
+            reset_view=True,
         )
-        label.setPixmap(scaled)
+
+    def _update_label_pixmap(
+        self, label: ImageView, qimage, reset_view: bool = False
+    ) -> None:
+        if qimage is None:
+            label.set_image(None, reset_view=reset_view)
+            return
+        label.set_image(qimage, reset_view=reset_view)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        if self._original_qimage is not None:
-            self._update_label_pixmap(self._original_image_label, self._original_qimage)
-        if self._preview_qimage is not None:
-            self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+        self._original_image_label.update()
+        self._preview_image_label.update()
 
     def _log_ignored_revision(self, revision: int) -> None:
         if revision == self._last_ignored_revision:

@@ -319,6 +319,17 @@ This is a running engineering diary. It must be updated after every task.
 ### Decisions
 - Tests use the fixture image and compare black pixel counts to verify parameter influence.
 
+## 2025-12-29 — GUI preview zoom/pan
+### Done
+- Replaced preview QLabel widgets with a small ImageView widget supporting wheel zoom, drag pan, and double-click reset.
+- Kept default fit behavior and preserved zoom/pan across live preview updates.
+
+### Issues / risks
+- Zoom anchoring uses cursor position; if this feels jumpy on some platforms, consider centering.
+
+### Decisions
+- Implemented QWidget paintEvent to keep the diff small and avoid QGraphicsView changes.
+
 ## 2025-12-29 — GUI preview sizing
 ### Done
 - Increased preview label minimum sizes and gave the preview panel more layout stretch for larger images.
