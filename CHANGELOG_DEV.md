@@ -264,3 +264,18 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Remove the synchronous render once worker stability is confirmed.
+
+## 2025-12-29 — Hotfix GUI single-flight preview
+### Done
+- Added single-flight render scheduling with pending render tracking to avoid concurrent jobs.
+- Ensured worker completion always clears in-flight state and triggers the latest pending render.
+- Added unit tests for render scheduling logic.
+
+### Issues / risks
+- Revision mismatches should be rare with single-flight; unexpected orderings will be ignored.
+
+### Decisions
+- Render scheduling logic is encapsulated in a small helper for testability.
+
+### Next
+- Remove debug output once preview stability is confirmed.

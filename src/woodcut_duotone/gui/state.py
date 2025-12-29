@@ -133,3 +133,24 @@ class AppState:
 
 def should_apply_revision(expected: int, incoming: int) -> bool:
     return incoming == expected
+
+
+class RenderScheduler:
+    def __init__(self) -> None:
+        self.in_flight = False
+        self.pending = False
+
+    def request_render(self) -> bool:
+        if self.in_flight:
+            self.pending = True
+            return False
+        self.in_flight = True
+        self.pending = False
+        return True
+
+    def on_render_finished(self) -> bool:
+        self.in_flight = False
+        if self.pending:
+            self.pending = False
+            return True
+        return False

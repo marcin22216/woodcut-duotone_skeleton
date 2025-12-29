@@ -39,7 +39,7 @@ from woodcut_duotone.core.steps import (
     MorphologyStep,
     ThresholdStep,
 )
-from woodcut_duotone.gui.state import AppState, should_apply_revision
+from woodcut_duotone.gui.state import AppState, RenderScheduler, should_apply_revision
 from woodcut_duotone.gui.worker import DebouncedPipelineRunner
 from woodcut_duotone.io import load_image, rgb_to_qimage, save_image
 
@@ -85,6 +85,9 @@ class MainWindow(QMainWindow):
         self._expected_revision = 0
         self._last_ignored_revision: int | None = None
         self._suppress_updates = False
+        self._render_scheduler = RenderScheduler()
+        self._render_in_flight = False
+        self._pending_render = False
 
         self._step_items: dict[str, QListWidgetItem] = {}
 
@@ -445,6 +448,10 @@ class MainWindow(QMainWindow):
     def _schedule_preview(self) -> None:
         if self.state.original_image_rgb is None:
             return
+        if not self._render_scheduler.request_render():
+            self._sync_render_flags()
+            return
+        self._sync_render_flags()
         pipeline = self._build_pipeline()
         self._expected_revision = self.state.next_render_revision()
         logging.getLogger(__name__).debug(
@@ -520,11 +527,14 @@ class MainWindow(QMainWindow):
         self._save_action.setEnabled(self.state.preview_image_rgb is not None)
 
     def _on_worker_done(self, revision: int, image, error: str | None) -> None:
+        self._sync_render_flags()
         if not should_apply_revision(self._expected_revision, revision):
             self._log_ignored_revision(revision)
+            self._finalize_render_cycle()
             return
         if error:
             QMessageBox.critical(self, "Processing failed", error)
+            self._finalize_render_cycle()
             return
         if not isinstance(image, np.ndarray):
             logging.getLogger(__name__).debug(
@@ -532,8 +542,10 @@ class MainWindow(QMainWindow):
                 revision,
                 type(image),
             )
+            self._finalize_render_cycle()
             return
         self._apply_preview(image, revision)
+        self._finalize_render_cycle()
 
     def _set_original_image(self, image) -> None:
         self._original_qimage = rgb_to_qimage(image)
@@ -677,6 +689,17 @@ class MainWindow(QMainWindow):
                 revision,
                 type(result),
             )
+
+    def _finalize_render_cycle(self) -> None:
+        if self._render_scheduler.on_render_finished():
+            self._sync_render_flags()
+            self._schedule_preview()
+        else:
+            self._sync_render_flags()
+
+    def _sync_render_flags(self) -> None:
+        self._render_in_flight = self._render_scheduler.in_flight
+        self._pending_render = self._render_scheduler.pending
 
 
 def run_gui() -> int:
