@@ -32,7 +32,7 @@ from woodcut_duotone.core.steps import (
     MorphologyStep,
     ThresholdStep,
 )
-from woodcut_duotone.gui.state import AppState
+from woodcut_duotone.gui.state import AppState, should_apply_revision
 from woodcut_duotone.gui.worker import DebouncedPipelineRunner
 from woodcut_duotone.io import load_image, rgb_to_qimage, save_image
 
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self._original_qimage = None
         self._preview_qimage = None
         self._preview_image_rgb = None
+        self._expected_revision = 0
         self._suppress_updates = False
 
         self._enabled_checkboxes: dict[str, QCheckBox] = {}
@@ -399,7 +400,8 @@ class MainWindow(QMainWindow):
         if self.state.original_image_rgb is None:
             return
         pipeline = self._build_pipeline()
-        self._runner.schedule(self.state.original_image_rgb, pipeline)
+        self._expected_revision = self.state.next_render_revision()
+        self._runner.schedule(self.state.original_image_rgb, pipeline, self._expected_revision)
 
     def _open_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -414,6 +416,10 @@ class MainWindow(QMainWindow):
             return
         self.state.original_image_rgb = image
         self._set_original_image(image)
+        self._preview_image_rgb = None
+        self._preview_qimage = None
+        self._update_label_pixmap(self._preview_image_label, None)
+        self._update_action_states()
         self._schedule_preview()
 
     def _save_image(self) -> None:
@@ -443,7 +449,6 @@ class MainWindow(QMainWindow):
             self._schedule_preview()
 
     def _reset_state(self) -> None:
-        self.state.push_undo()
         self.state.reset_defaults()
         self._apply_state_to_controls()
         self._update_action_states()
@@ -452,13 +457,20 @@ class MainWindow(QMainWindow):
     def _update_action_states(self) -> None:
         self._undo_action.setEnabled(self.state.can_undo)
         self._redo_action.setEnabled(self.state.can_redo)
+        self._save_action.setEnabled(self._preview_image_rgb is not None)
 
-    def _on_preview_ready(self, image) -> None:
+    def _on_preview_ready(self, revision: int, image) -> None:
+        if not should_apply_revision(self._expected_revision, revision):
+            return
         self._preview_image_rgb = image
         self._preview_qimage = rgb_to_qimage(image)
         self._update_label_pixmap(self._preview_image_label, self._preview_qimage)
+        self._update_action_states()
+        self.state.last_applied_revision = revision
 
-    def _on_worker_error(self, message: str) -> None:
+    def _on_worker_error(self, revision: int, message: str) -> None:
+        if not should_apply_revision(self._expected_revision, revision):
+            return
         QMessageBox.critical(self, "Processing failed", message)
 
     def _set_original_image(self, image) -> None:

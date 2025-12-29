@@ -182,3 +182,20 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Next
 - Stage 11: step reordering, richer Undo/Redo semantics, and presets.
+
+## 2025-12-29 — Stage 11 GUI stabilization
+### Done
+- Added render revision tracking to ignore stale preview results.
+- Reset now restores defaults and clears undo/redo history.
+- Save/Undo/Redo actions are enabled only when applicable.
+- Added state-level tests for revision logic and reset behavior.
+
+### Issues / risks
+- Revision handling relies on the GUI tracking the latest expected revision; ensure new renders always increment the counter.
+
+### Decisions
+- Stale worker results are ignored unless the revision matches the latest expected render.
+- Reset clears history to avoid reapplying outdated parameter snapshots.
+
+### Next
+- Stage 12: step reordering (drag & drop), improved Undo/Redo semantics, and presets.

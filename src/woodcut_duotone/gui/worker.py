@@ -10,26 +10,27 @@ from woodcut_duotone.core.pipeline import Pipeline
 
 
 class PipelineWorker(QObject):
-    finished = Signal(object)
-    failed = Signal(str)
+    finished = Signal(int, object)
+    failed = Signal(int, str)
 
-    def __init__(self, image, pipeline: Pipeline) -> None:
+    def __init__(self, image, pipeline: Pipeline, revision: int) -> None:
         super().__init__()
         self._image = image
         self._pipeline = pipeline
+        self._revision = revision
 
     def run(self) -> None:
         try:
             result = self._pipeline.run(self._image)
         except Exception as exc:  # pragma: no cover - GUI error handling
-            self.failed.emit(str(exc))
+            self.failed.emit(self._revision, str(exc))
         else:
-            self.finished.emit(result)
+            self.finished.emit(self._revision, result)
 
 
 class DebouncedPipelineRunner(QObject):
-    result_ready = Signal(object)
-    error = Signal(str)
+    result_ready = Signal(int, object)
+    error = Signal(int, str)
 
     def __init__(self, delay_ms: int = 200, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -41,8 +42,8 @@ class DebouncedPipelineRunner(QObject):
         self._queued = False
         self._thread: Optional[QThread] = None
 
-    def schedule(self, image, pipeline: Pipeline) -> None:
-        self._pending = (image.copy(), pipeline)
+    def schedule(self, image, pipeline: Pipeline, revision: int) -> None:
+        self._pending = (image.copy(), pipeline, revision)
         self._timer.start()
 
     def _start(self) -> None:
@@ -51,12 +52,12 @@ class DebouncedPipelineRunner(QObject):
             return
         if self._pending is None:
             return
-        image, pipeline = self._pending
+        image, pipeline, revision = self._pending
         self._pending = None
         self._running = True
 
         thread = QThread()
-        worker = PipelineWorker(image, pipeline)
+        worker = PipelineWorker(image, pipeline, revision)
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)

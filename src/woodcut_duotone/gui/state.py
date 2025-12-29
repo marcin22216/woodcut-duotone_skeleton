@@ -51,6 +51,8 @@ class AppState:
         self.params = _default_params()
         self.undo_stack: list[dict[str, dict[str, Any]]] = []
         self.redo_stack: list[dict[str, dict[str, Any]]] = []
+        self.render_revision = 0
+        self.last_applied_revision = 0
 
     def snapshot(self) -> dict[str, dict[str, Any]]:
         return {
@@ -69,6 +71,12 @@ class AppState:
     def reset_defaults(self) -> None:
         self.enabled = _default_enabled()
         self.params = _default_params()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+    def next_render_revision(self) -> int:
+        self.render_revision += 1
+        return self.render_revision
 
     @property
     def can_undo(self) -> bool:
@@ -93,3 +101,7 @@ class AppState:
         snapshot = self.redo_stack.pop()
         self.restore(snapshot)
         return True
+
+
+def should_apply_revision(expected: int, incoming: int) -> bool:
+    return incoming == expected

@@ -1,4 +1,4 @@
-from woodcut_duotone.gui.state import AppState
+from woodcut_duotone.gui.state import AppState, should_apply_revision
 
 
 def test_app_state_undo_redo_roundtrip() -> None:
@@ -42,3 +42,33 @@ def test_app_state_restore_snapshot() -> None:
 
     assert state.enabled == snapshot["enabled"]
     assert state.params == snapshot["params"]
+
+
+def test_app_state_render_revision_increments() -> None:
+    state = AppState()
+
+    first = state.next_render_revision()
+    second = state.next_render_revision()
+
+    assert first == 1
+    assert second == 2
+
+
+def test_app_state_reset_clears_history_and_defaults() -> None:
+    state = AppState()
+    state.push_undo()
+    state.params["threshold"]["bias"] = 10
+    state.enabled["edges"] = True
+
+    state.reset_defaults()
+
+    assert state.params["threshold"]["bias"] == 0
+    assert state.enabled["edges"] is False
+    assert not state.can_undo
+    assert not state.can_redo
+
+
+def test_should_apply_revision() -> None:
+    assert should_apply_revision(3, 3)
+    assert not should_apply_revision(3, 2)
+    assert not should_apply_revision(3, 4)
