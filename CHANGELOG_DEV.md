@@ -416,3 +416,50 @@ This is a running engineering diary. It must be updated after every task.
 
 ### Decisions
 - Source luma is captured from the original RGB input (Option 2) to minimize pipeline changes.
+
+## 2026-01-08 — Stage 13 Denoise + Detail Boost
+### Done
+- Added a median-based Denoise step and an unsharp Detail Boost step.
+- Wired new steps into AppState defaults, pipeline order, and GUI controls.
+- Added unit tests and golden fixtures for both steps.
+
+### Issues / risks
+- Detail boost relies on Gaussian blur + addWeighted; golden outputs may shift with OpenCV versions.
+
+### Decisions
+- Used median filtering for deterministic denoise with minimal parameters.
+- Detail boost amount is stored as an integer percent for GUI-friendly sliders.
+
+### Next
+- Consider adding a bilateral/NLMeans option and luma-only detail boosting.
+
+## 2026-01-08 — Stage 14 Foreground Emphasis
+### Done
+- Added an optional Foreground Emphasis step based on edge density.
+- Wired step params into AppState and GUI sliders with full-range control.
+- Added unit tests and a golden fixture for the new step.
+
+### Issues / risks
+- Edge-based masking can be sensitive to OpenCV Canny output; golden output may shift across versions.
+
+### Decisions
+- Defaulted the step to disabled to avoid changing baseline output.
+- Used a soft edge-density mask with user-controlled spread and threshold.
+
+### Next
+- Consider a manual ROI keep/whiten mode for precision foreground selection.
+
+## 2026-01-08 — Stage 15 Denoise methods + Luma Detail Boost
+### Done
+- Added denoise method selection (median/bilateral/NLMeans) with new GUI controls.
+- Added Detail Boost apply-on mode (RGB vs luma) and a luma golden fixture.
+- Updated AppState defaults and unit tests for new params.
+
+### Issues / risks
+- NLMeans and bilateral behavior can vary with OpenCV versions; tests avoid strict pixel equality.
+
+### Decisions
+- Defaulted denoise method to median and kept luma-only detail boost opt-in.
+
+### Next
+- Consider adding a preview-only downscale toggle for faster live updates on large images.

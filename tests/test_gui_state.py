@@ -66,9 +66,12 @@ def test_app_state_reset_clears_history_and_defaults() -> None:
     assert state.params["Threshold"]["bias"] == 0
     assert state.enabled["Edges"] is False
     assert state.step_order == [
+        "Denoise",
+        "Detail Boost",
         "Grayscale",
         "CLAHE Contrast",
         "Gaussian Blur",
+        "Foreground Emphasis",
         "Threshold",
         "Morphology",
         "Edges",
@@ -79,6 +82,31 @@ def test_app_state_reset_clears_history_and_defaults() -> None:
 
 def test_app_state_params_have_required_keys() -> None:
     state = AppState()
+
+    assert "method" in state.params["Denoise"]
+    assert "kernel_size" in state.params["Denoise"]
+    assert "diameter" in state.params["Denoise"]
+    assert "sigma_color" in state.params["Denoise"]
+    assert "sigma_space" in state.params["Denoise"]
+    assert "h" in state.params["Denoise"]
+    assert "template_window" in state.params["Denoise"]
+    assert "search_window" in state.params["Denoise"]
+    assert isinstance(state.params["Denoise"]["kernel_size"], int)
+
+    assert "amount" in state.params["Detail Boost"]
+    assert "radius" in state.params["Detail Boost"]
+    assert "apply_on" in state.params["Detail Boost"]
+    assert isinstance(state.params["Detail Boost"]["amount"], int)
+    assert isinstance(state.params["Detail Boost"]["radius"], int)
+
+    assert "low" in state.params["Foreground Emphasis"]
+    assert "high" in state.params["Foreground Emphasis"]
+    assert "spread" in state.params["Foreground Emphasis"]
+    assert "threshold" in state.params["Foreground Emphasis"]
+    assert "strength" in state.params["Foreground Emphasis"]
+    assert "background" in state.params["Foreground Emphasis"]
+    assert isinstance(state.params["Foreground Emphasis"]["low"], int)
+    assert isinstance(state.params["Foreground Emphasis"]["high"], int)
 
     assert "mode" in state.params["Threshold"]
     assert "block_size" in state.params["Threshold"]

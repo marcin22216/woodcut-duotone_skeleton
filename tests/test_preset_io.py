@@ -43,9 +43,12 @@ def test_preset_tolerates_missing_and_extra_steps() -> None:
     assert state.step_order == [
         "Threshold",
         "Edges",
+        "Denoise",
+        "Detail Boost",
         "Grayscale",
         "CLAHE Contrast",
         "Gaussian Blur",
+        "Foreground Emphasis",
         "Morphology",
     ]
 

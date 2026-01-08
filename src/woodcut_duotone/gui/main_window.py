@@ -35,7 +35,10 @@ from PySide6.QtWidgets import (
 from woodcut_duotone.core.pipeline import Pipeline
 from woodcut_duotone.core.steps import (
     CLAHEContrastStep,
+    DenoiseStep,
+    DetailBoostStep,
     EdgesStep,
+    ForegroundEmphasisStep,
     GaussianBlurStep,
     GrayscaleStep,
     MorphologyStep,
@@ -216,7 +219,7 @@ class ImageView(QWidget):
             return
         target, _scale = target_data
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.drawPixmap(target, self._pixmap)
+        painter.drawPixmap(target, self._pixmap, self._pixmap.rect())
         if self._roi_selectable and self._roi_enabled:
             rect = self._roi_drag_rect
             if rect is None and self._roi_image_rect is not None:
@@ -397,6 +400,9 @@ class MainWindow(QMainWindow):
         steps_layout.addWidget(steps_hint)
         left_layout.addWidget(steps_group)
 
+        left_layout.addWidget(self._build_denoise_group())
+        left_layout.addWidget(self._build_detail_boost_group())
+        left_layout.addWidget(self._build_foreground_group())
         left_layout.addWidget(self._build_threshold_group())
         left_layout.addWidget(self._build_morphology_group())
         left_layout.addWidget(self._build_edges_group())
@@ -408,6 +414,189 @@ class MainWindow(QMainWindow):
         scroll.setWidget(container)
         scroll.setMinimumWidth(280)
         return scroll
+
+    def _build_denoise_group(self) -> QGroupBox:
+        group = QGroupBox("Denoise")
+        layout = QFormLayout(group)
+
+        self._denoise_method = QComboBox()
+        self._denoise_method.addItems(["median", "bilateral", "nlmeans"])
+        self._denoise_method.currentIndexChanged.connect(
+            self._on_denoise_method_changed
+        )
+        layout.addRow("Method", self._denoise_method)
+
+        self._denoise_kernel_slider, self._denoise_kernel_label = self._make_slider(
+            1, 15, 3
+        )
+        self._denoise_kernel_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._denoise_kernel_label)
+        )
+        layout.addRow("Median kernel", self._wrap_slider(self._denoise_kernel_slider))
+        layout.addRow("", self._denoise_kernel_label)
+
+        self._denoise_diameter_slider, self._denoise_diameter_label = (
+            self._make_slider(1, 25, 9)
+        )
+        self._denoise_diameter_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._denoise_diameter_label)
+        )
+        layout.addRow("Bilateral diameter", self._wrap_slider(self._denoise_diameter_slider))
+        layout.addRow("", self._denoise_diameter_label)
+
+        self._denoise_sigma_color_slider, self._denoise_sigma_color_label = (
+            self._make_slider(0, 200, 80)
+        )
+        self._denoise_sigma_color_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._denoise_sigma_color_label
+            )
+        )
+        layout.addRow("Sigma color", self._wrap_slider(self._denoise_sigma_color_slider))
+        layout.addRow("", self._denoise_sigma_color_label)
+
+        self._denoise_sigma_space_slider, self._denoise_sigma_space_label = (
+            self._make_slider(0, 200, 80)
+        )
+        self._denoise_sigma_space_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._denoise_sigma_space_label
+            )
+        )
+        layout.addRow("Sigma space", self._wrap_slider(self._denoise_sigma_space_slider))
+        layout.addRow("", self._denoise_sigma_space_label)
+
+        self._denoise_h_slider, self._denoise_h_label = self._make_slider(0, 50, 10)
+        self._denoise_h_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._denoise_h_label)
+        )
+        layout.addRow("NLMeans h", self._wrap_slider(self._denoise_h_slider))
+        layout.addRow("", self._denoise_h_label)
+
+        self._denoise_template_slider, self._denoise_template_label = (
+            self._make_slider(1, 21, 7)
+        )
+        self._denoise_template_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._denoise_template_label
+            )
+        )
+        layout.addRow(
+            "Template window", self._wrap_slider(self._denoise_template_slider)
+        )
+        layout.addRow("", self._denoise_template_label)
+
+        self._denoise_search_slider, self._denoise_search_label = (
+            self._make_slider(1, 31, 21)
+        )
+        self._denoise_search_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._denoise_search_label)
+        )
+        layout.addRow("Search window", self._wrap_slider(self._denoise_search_slider))
+        layout.addRow("", self._denoise_search_label)
+
+        return group
+
+    def _build_detail_boost_group(self) -> QGroupBox:
+        group = QGroupBox("Detail Boost")
+        layout = QFormLayout(group)
+
+        self._detail_apply_on = QComboBox()
+        self._detail_apply_on.addItems(["rgb", "luma"])
+        self._detail_apply_on.currentIndexChanged.connect(self._on_controls_changed)
+        layout.addRow("Apply on", self._detail_apply_on)
+
+        self._detail_amount_slider, self._detail_amount_label = self._make_slider(
+            0, 200, 20
+        )
+        self._detail_amount_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._detail_amount_label)
+        )
+        layout.addRow("Amount", self._wrap_slider(self._detail_amount_slider))
+        layout.addRow("", self._detail_amount_label)
+
+        self._detail_radius_slider, self._detail_radius_label = self._make_slider(
+            1, 9, 3, step=2
+        )
+        self._detail_radius_slider.valueChanged.connect(
+            lambda value: self._on_odd_slider_changed(
+                value, self._detail_radius_slider, self._detail_radius_label
+            )
+        )
+        layout.addRow("Radius", self._wrap_slider(self._detail_radius_slider))
+        layout.addRow("", self._detail_radius_label)
+
+        return group
+
+    def _build_foreground_group(self) -> QGroupBox:
+        group = QGroupBox("Foreground Emphasis")
+        layout = QFormLayout(group)
+
+        self._foreground_low_slider, self._foreground_low_label = self._make_slider(
+            0, 255, 40
+        )
+        self._foreground_low_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._foreground_low_label)
+        )
+        layout.addRow("Edge low", self._wrap_slider(self._foreground_low_slider))
+        layout.addRow("", self._foreground_low_label)
+
+        self._foreground_high_slider, self._foreground_high_label = self._make_slider(
+            0, 255, 120
+        )
+        self._foreground_high_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(value, self._foreground_high_label)
+        )
+        layout.addRow("Edge high", self._wrap_slider(self._foreground_high_slider))
+        layout.addRow("", self._foreground_high_label)
+
+        self._foreground_spread_slider, self._foreground_spread_label = self._make_slider(
+            0, 100, 30
+        )
+        self._foreground_spread_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._foreground_spread_label
+            )
+        )
+        layout.addRow("Spread", self._wrap_slider(self._foreground_spread_slider))
+        layout.addRow("", self._foreground_spread_label)
+
+        self._foreground_threshold_slider, self._foreground_threshold_label = (
+            self._make_slider(0, 100, 10)
+        )
+        self._foreground_threshold_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._foreground_threshold_label
+            )
+        )
+        layout.addRow("Threshold", self._wrap_slider(self._foreground_threshold_slider))
+        layout.addRow("", self._foreground_threshold_label)
+
+        self._foreground_strength_slider, self._foreground_strength_label = (
+            self._make_slider(0, 100, 70)
+        )
+        self._foreground_strength_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._foreground_strength_label
+            )
+        )
+        layout.addRow("Strength", self._wrap_slider(self._foreground_strength_slider))
+        layout.addRow("", self._foreground_strength_label)
+
+        self._foreground_background_slider, self._foreground_background_label = (
+            self._make_slider(0, 255, 255)
+        )
+        self._foreground_background_slider.valueChanged.connect(
+            lambda value: self._on_slider_changed(
+                value, self._foreground_background_label
+            )
+        )
+        layout.addRow(
+            "Background", self._wrap_slider(self._foreground_background_slider)
+        )
+        layout.addRow("", self._foreground_background_label)
+
+        return group
 
     def _build_threshold_group(self) -> QGroupBox:
         group = QGroupBox("Threshold")
@@ -587,6 +776,49 @@ class MainWindow(QMainWindow):
 
         self._populate_step_list()
 
+        denoise_params = self.state.params["Denoise"]
+        self._denoise_method.setCurrentText(denoise_params["method"])
+        self._denoise_kernel_slider.setValue(denoise_params["kernel_size"])
+        self._denoise_kernel_label.setText(str(denoise_params["kernel_size"]))
+        self._denoise_diameter_slider.setValue(denoise_params["diameter"])
+        self._denoise_diameter_label.setText(str(denoise_params["diameter"]))
+        self._denoise_sigma_color_slider.setValue(denoise_params["sigma_color"])
+        self._denoise_sigma_color_label.setText(str(denoise_params["sigma_color"]))
+        self._denoise_sigma_space_slider.setValue(denoise_params["sigma_space"])
+        self._denoise_sigma_space_label.setText(str(denoise_params["sigma_space"]))
+        self._denoise_h_slider.setValue(denoise_params["h"])
+        self._denoise_h_label.setText(str(denoise_params["h"]))
+        self._denoise_template_slider.setValue(denoise_params["template_window"])
+        self._denoise_template_label.setText(str(denoise_params["template_window"]))
+        self._denoise_search_slider.setValue(denoise_params["search_window"])
+        self._denoise_search_label.setText(str(denoise_params["search_window"]))
+        self._update_denoise_controls()
+
+        detail_params = self.state.params["Detail Boost"]
+        self._detail_amount_slider.setValue(detail_params["amount"])
+        self._detail_amount_label.setText(str(detail_params["amount"]))
+        self._detail_radius_slider.setValue(detail_params["radius"])
+        self._detail_radius_label.setText(str(detail_params["radius"]))
+        self._detail_apply_on.setCurrentText(detail_params["apply_on"])
+
+        foreground_params = self.state.params["Foreground Emphasis"]
+        self._foreground_low_slider.setValue(foreground_params["low"])
+        self._foreground_low_label.setText(str(foreground_params["low"]))
+        self._foreground_high_slider.setValue(foreground_params["high"])
+        self._foreground_high_label.setText(str(foreground_params["high"]))
+        self._foreground_spread_slider.setValue(foreground_params["spread"])
+        self._foreground_spread_label.setText(str(foreground_params["spread"]))
+        self._foreground_threshold_slider.setValue(foreground_params["threshold"])
+        self._foreground_threshold_label.setText(
+            str(foreground_params["threshold"])
+        )
+        self._foreground_strength_slider.setValue(foreground_params["strength"])
+        self._foreground_strength_label.setText(str(foreground_params["strength"]))
+        self._foreground_background_slider.setValue(foreground_params["background"])
+        self._foreground_background_label.setText(
+            str(foreground_params["background"])
+        )
+
         threshold_params = self.state.params["Threshold"]
         self._threshold_mode.setCurrentText(threshold_params["mode"])
         self._threshold_bias_slider.setValue(threshold_params["bias"])
@@ -625,6 +857,29 @@ class MainWindow(QMainWindow):
                 item.checkState() == Qt.CheckState.Checked
             )
 
+        self.state.params["Denoise"] = {
+            "method": self._denoise_method.currentText(),
+            "kernel_size": int(self._denoise_kernel_slider.value()),
+            "diameter": int(self._denoise_diameter_slider.value()),
+            "sigma_color": int(self._denoise_sigma_color_slider.value()),
+            "sigma_space": int(self._denoise_sigma_space_slider.value()),
+            "h": int(self._denoise_h_slider.value()),
+            "template_window": int(self._denoise_template_slider.value()),
+            "search_window": int(self._denoise_search_slider.value()),
+        }
+        self.state.params["Detail Boost"] = {
+            "amount": int(self._detail_amount_slider.value()),
+            "radius": int(self._detail_radius_slider.value()),
+            "apply_on": self._detail_apply_on.currentText(),
+        }
+        self.state.params["Foreground Emphasis"] = {
+            "low": int(self._foreground_low_slider.value()),
+            "high": int(self._foreground_high_slider.value()),
+            "spread": int(self._foreground_spread_slider.value()),
+            "threshold": int(self._foreground_threshold_slider.value()),
+            "strength": int(self._foreground_strength_slider.value()),
+            "background": int(self._foreground_background_slider.value()),
+        }
         self.state.params["Threshold"] = {
             "mode": self._threshold_mode.currentText(),
             "invert": self._threshold_invert.isChecked(),
@@ -669,6 +924,12 @@ class MainWindow(QMainWindow):
         self._update_action_states()
         self._schedule_preview()
 
+    def _on_denoise_method_changed(self) -> None:
+        if self._suppress_updates:
+            return
+        self._update_denoise_controls()
+        self._on_controls_changed()
+
     def _on_slider_changed(self, value: int, label: QLabel) -> None:
         if self._suppress_updates:
             return
@@ -702,6 +963,23 @@ class MainWindow(QMainWindow):
         if enabled.get("Edges", False):
             assert "low" in params["Edges"] and "high" in params["Edges"]
         steps_by_name = {
+            "Denoise": DenoiseStep(
+                enabled=enabled["Denoise"],
+                method=params["Denoise"]["method"],
+                kernel_size=params["Denoise"]["kernel_size"],
+                diameter=params["Denoise"]["diameter"],
+                sigma_color=params["Denoise"]["sigma_color"],
+                sigma_space=params["Denoise"]["sigma_space"],
+                h=params["Denoise"]["h"],
+                template_window=params["Denoise"]["template_window"],
+                search_window=params["Denoise"]["search_window"],
+            ),
+            "Detail Boost": DetailBoostStep(
+                enabled=enabled["Detail Boost"],
+                amount=params["Detail Boost"]["amount"],
+                radius=params["Detail Boost"]["radius"],
+                apply_on=params["Detail Boost"]["apply_on"],
+            ),
             "Grayscale": GrayscaleStep(enabled=enabled["Grayscale"]),
             "CLAHE Contrast": CLAHEContrastStep(
                 enabled=enabled["CLAHE Contrast"],
@@ -711,6 +989,15 @@ class MainWindow(QMainWindow):
             "Gaussian Blur": GaussianBlurStep(
                 enabled=enabled["Gaussian Blur"],
                 strength=params["Gaussian Blur"]["strength"],
+            ),
+            "Foreground Emphasis": ForegroundEmphasisStep(
+                enabled=enabled["Foreground Emphasis"],
+                low=params["Foreground Emphasis"]["low"],
+                high=params["Foreground Emphasis"]["high"],
+                spread=params["Foreground Emphasis"]["spread"],
+                threshold=params["Foreground Emphasis"]["threshold"],
+                strength=params["Foreground Emphasis"]["strength"],
+                background=params["Foreground Emphasis"]["background"],
             ),
             "Threshold": ThresholdStep(
                 enabled=enabled["Threshold"],
@@ -1053,6 +1340,35 @@ class MainWindow(QMainWindow):
         is_adaptive = self._threshold_mode.currentText() == "adaptive"
         self._threshold_block_slider.setEnabled(is_adaptive)
         self._threshold_block_label.setEnabled(is_adaptive)
+
+    def _update_denoise_controls(self) -> None:
+        method = self._denoise_method.currentText()
+        is_median = method == "median"
+        is_bilateral = method == "bilateral"
+        is_nlmeans = method == "nlmeans"
+
+        for widget in (self._denoise_kernel_slider, self._denoise_kernel_label):
+            widget.setEnabled(is_median)
+
+        for widget in (
+            self._denoise_diameter_slider,
+            self._denoise_diameter_label,
+            self._denoise_sigma_color_slider,
+            self._denoise_sigma_color_label,
+            self._denoise_sigma_space_slider,
+            self._denoise_sigma_space_label,
+        ):
+            widget.setEnabled(is_bilateral)
+
+        for widget in (
+            self._denoise_h_slider,
+            self._denoise_h_label,
+            self._denoise_template_slider,
+            self._denoise_template_label,
+            self._denoise_search_slider,
+            self._denoise_search_label,
+        ):
+            widget.setEnabled(is_nlmeans)
 
     def _apply_preview(self, image: np.ndarray, revision: int) -> None:
         roi_slice = self._roi_by_revision.pop(revision, None)

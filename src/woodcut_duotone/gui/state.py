@@ -9,9 +9,12 @@ import numpy as np
 
 
 KNOWN_STEPS = [
+    "Denoise",
+    "Detail Boost",
     "Grayscale",
     "CLAHE Contrast",
     "Gaussian Blur",
+    "Foreground Emphasis",
     "Threshold",
     "Morphology",
     "Edges",
@@ -30,9 +33,12 @@ def build_step_names(step_order: list[str], enabled: dict[str, bool]) -> list[st
 
 def _default_enabled() -> dict[str, bool]:
     return {
+        "Denoise": True,
+        "Detail Boost": True,
         "Grayscale": True,
         "CLAHE Contrast": True,
         "Gaussian Blur": True,
+        "Foreground Emphasis": False,
         "Threshold": True,
         "Morphology": True,
         "Edges": False,
@@ -41,9 +47,28 @@ def _default_enabled() -> dict[str, bool]:
 
 def _default_params() -> dict[str, dict[str, Any]]:
     return {
+        "Denoise": {
+            "method": "median",
+            "kernel_size": 3,
+            "diameter": 9,
+            "sigma_color": 80,
+            "sigma_space": 80,
+            "h": 10,
+            "template_window": 7,
+            "search_window": 21,
+        },
+        "Detail Boost": {"amount": 20, "radius": 3, "apply_on": "rgb"},
         "Grayscale": {},
         "CLAHE Contrast": {"clip_limit": 2.0, "tile_grid_size": 8},
         "Gaussian Blur": {"strength": 1},
+        "Foreground Emphasis": {
+            "low": 40,
+            "high": 120,
+            "spread": 30,
+            "threshold": 10,
+            "strength": 70,
+            "background": 255,
+        },
         "Threshold": {
             "mode": "otsu",
             "invert": False,
